@@ -138,14 +138,14 @@ class CombinerWindow(ctk.CTkToplevel):
         self.file_listbox.delete("0.0", "end")
         
         if not self.pdf_files:
-            self.file_listbox.insert("0.0", "PDFファイルがありません。\\nファイルを追加してください。")
+            self.file_listbox.insert("0.0", "PDFファイルがありません。\nファイルを追加してください。")
             self.file_count_label.configure(text="ファイル数: 0")
             self.combine_button.configure(state="disabled")
         else:
-            content = "📋 結合順序:\\n\\n"
+            content = "📋 結合順序:\n\n"
             for i, file_path in enumerate(self.pdf_files, 1):
-                file_name = file_path.split("/")[-1].split("\\\\")[-1]  # ファイル名のみ表示
-                content += f"{i}. {file_name}\\n"
+                file_name = file_path.split("/")[-1].split("\\")[-1]  # ファイル名のみ表示
+                content += f"{i}. {file_name}\n"
             
             self.file_listbox.insert("0.0", content)
             self.file_count_label.configure(text=f"ファイル数: {len(self.pdf_files)}")
@@ -182,6 +182,6 @@ class CombinerWindow(ctk.CTkToplevel):
         # デモ用メッセージ
         self.file_listbox.configure(state="normal")
         self.file_listbox.delete("0.0", "end")
-        self.file_listbox.insert("0.0", "PDF結合機能は次のフェーズで実装予定です。\\n\\n現在の結合対象:\\n" + 
-                                "\\n".join([f"• {f}" for f in self.pdf_files]))
+        self.file_listbox.insert("0.0", "PDF結合機能は次のフェーズで実装予定です。\n\n現在の結合対象:\n" + 
+                                "\n".join([f"• {f}" for f in self.pdf_files]))
         self.file_listbox.configure(state="disabled")

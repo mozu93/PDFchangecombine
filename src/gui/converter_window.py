@@ -83,7 +83,7 @@ class ConverterWindow(ctk.CTkToplevel):
         self.drop_area.pack(fill="both", expand=True, padx=20, pady=20)
         
         # 初期メッセージ
-        initial_message = \"\"\"📁 ファイルをここにドラッグ&ドロップしてください
+        initial_message = """📁 ファイルをここにドラッグ&ドロップしてください
 
 対応ファイル:
 • Word: .docx, .doc
@@ -91,7 +91,7 @@ class ConverterWindow(ctk.CTkToplevel):
 • PowerPoint: .pptx, .ppt
 • 画像: .jpg, .jpeg, .png, .bmp, .gif, .tiff
 
-フォルダをドロップすると、内部のファイルを自動的に検索します。\"\"\"
+フォルダをドロップすると、内部のファイルを自動的に検索します。"""
         
         self.drop_area.insert("0.0", initial_message)
         self.drop_area.configure(state="disabled")

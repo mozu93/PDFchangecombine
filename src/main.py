@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.gui.main_window import MainWindow
+from src.gui.unified_window import UnifiedWindow
 from src.utils.logger import logger
 from src.config import APP_NAME, APP_VERSION
 
@@ -21,8 +21,8 @@ def main():
     try:
         logger.info(f"{APP_NAME} v{APP_VERSION} 起動開始")
         
-        # メインウィンドウ作成・実行
-        app = MainWindow()
+        # 統合ウィンドウ作成・実行
+        app = UnifiedWindow()
         app.run()
         
         logger.info(f"{APP_NAME} 正常終了")

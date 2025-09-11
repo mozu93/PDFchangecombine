@@ -132,6 +132,9 @@ class PDFConverter:
                 success = self.office_converter.convert_to_pdf(file_path, output_path)
             elif file_type == 'image':
                 success = self.image_converter.convert_to_pdf(file_path, output_path)
+            elif file_type == 'pdf':
+                # PDFファイルは変換済フォルダにコピー
+                success = self._copy_pdf_file(file_path, output_path)
             else:
                 result.error_message = f"未対応のファイル種別: {file_type}"
                 return result
@@ -195,6 +198,37 @@ class PDFConverter:
             'successful_files': [r.target_path for r in successful_files],
             'failed_files': [(r.source_path, r.error_message) for r in failed_files]
         }
+    
+    def _copy_pdf_file(self, input_path: str, output_path: str) -> bool:
+        """PDFファイルを変換済フォルダにコピー"""
+        try:
+            import shutil
+            
+            # 入力ファイル存在確認
+            if not os.path.exists(input_path):
+                logger.error(f"コピー元PDFファイルが存在しません: {input_path}")
+                return False
+            
+            # 出力ディレクトリの存在確認・作成
+            output_dir = os.path.dirname(output_path)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # PDFファイルをコピー
+            shutil.copy2(input_path, output_path)
+            logger.info(f"PDFファイルコピー成功: {Path(input_path).name} → {output_path}")
+            
+            return True
+            
+        except PermissionError as e:
+            logger.error(f"PDFファイルコピーでアクセス権限エラー: {input_path} - {e}")
+            return False
+        except OSError as e:
+            logger.error(f"PDFファイルコピーでシステムエラー: {input_path} - {e}")
+            return False
+        except Exception as e:
+            logger.error(f"PDFファイルコピーで予期しないエラー: {input_path} - {e}")
+            return False
     
     def cleanup(self):
         """リソースクリーンアップ"""

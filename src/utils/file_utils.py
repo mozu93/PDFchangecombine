@@ -9,6 +9,7 @@ from typing import List, Dict, Set
 from ..config import (
     SUPPORTED_OFFICE_EXTENSIONS, 
     SUPPORTED_IMAGE_EXTENSIONS, 
+    SUPPORTED_PDF_EXTENSIONS,
     ALL_SUPPORTED_EXTENSIONS,
     OUTPUT_FOLDER_NAME,
     MAX_FILE_SIZE_MB
@@ -42,7 +43,7 @@ class FileValidator:
             file_path: ファイルパス
             
         Returns:
-            str: ファイル種別 ('word'|'excel'|'powerpoint'|'image'|'unknown')
+            str: ファイル種別 ('word'|'excel'|'powerpoint'|'image'|'pdf'|'unknown')
         """
         file_ext = Path(file_path).suffix.lower()
         
@@ -54,6 +55,8 @@ class FileValidator:
             return 'powerpoint'
         elif file_ext in SUPPORTED_IMAGE_EXTENSIONS:
             return 'image'
+        elif file_ext in SUPPORTED_PDF_EXTENSIONS:
+            return 'pdf'
         else:
             return 'unknown'
     
@@ -104,8 +107,11 @@ class FileScanner:
             paths: ファイル/フォルダパスのリスト
             
         Returns:
-            Dict: {'valid': [有効ファイルリスト], 'invalid': [無効ファイルリスト]}
+            Dict: {'valid': [有効ファイルリスト], 'invalid': [無効ファイルリスト], 'scan_time': float}
         """
+        import time
+        start_time = time.time()
+        
         result = {'valid': [], 'invalid': []}
         
         for path_str in paths:
@@ -119,6 +125,7 @@ class FileScanner:
                 logger.warning(f"無効なパス: {path_str}")
                 result['invalid'].append(path_str)
         
+        result['scan_time'] = time.time() - start_time
         logger.info(f"スキャン完了 - 有効: {len(result['valid'])}, 無効: {len(result['invalid'])}")
         return result
     

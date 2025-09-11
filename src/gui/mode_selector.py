@@ -76,10 +76,10 @@ class ModeSelector:
         )
         info_text.pack(fill="x", padx=20, pady=(0, 20))
         
-        info_content = \"\"\"対応形式:
+        info_content = """対応形式:
 • Office: Word (.docx, .doc), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt)
 • 画像: .jpg, .jpeg, .png, .bmp, .gif, .tiff
-• PDF: 結合処理に使用\"\"\"
+• PDF: 結合処理に使用"""
         
         info_text.insert("0.0", info_content)
         info_text.configure(state="disabled")

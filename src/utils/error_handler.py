@@ -130,11 +130,11 @@ class ErrorHandler:
         
         # 重要度に応じた対処法追加
         if severity == ErrorSeverity.FATAL:
-            base_message += "\\n\\nアプリケーションを再起動してください。"
+            base_message += "\n\nアプリケーションを再起動してください。"
         elif severity == ErrorSeverity.CRITICAL:
-            base_message += "\\n\\n操作をやり直してください。"
+            base_message += "\n\n操作をやり直してください。"
         elif severity == ErrorSeverity.WARNING:
-            base_message += "\\n\\n処理は継続されます。"
+            base_message += "\n\n処理は継続されます。"
         
         return base_message
     
@@ -228,7 +228,7 @@ class ErrorHandler:
             exc_value,
             ErrorSeverity.FATAL,
             "システム例外",
-            f"予期しない内部エラーが発生しました。\\n\\n{error_msg}\\n\\nアプリケーションを終了します。"
+            f"予期しない内部エラーが発生しました。\n\n{error_msg}\n\nアプリケーションを終了します。"
         )
     
     def get_error_statistics(self) -> dict:

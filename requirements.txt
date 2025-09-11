@@ -9,6 +9,7 @@ reportlab>=4.0.0
 # Office File Processing
 python-docx>=0.8.11
 openpyxl>=3.1.0
+xlrd>=2.0.0
 python-pptx>=0.6.21
 
 # Image Processing
