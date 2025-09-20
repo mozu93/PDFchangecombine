@@ -17,6 +17,8 @@ Microsoft Officeファイル（Word、Excel、PowerPoint）と画像ファイル
 - ドラッグ&ドロップによる順序変更
 - ファイル個別削除機能
 - 一括クリア機能
+- 奇数ページのPDFに白紙ページを挿入するオプション
+- フッター中央へのページ番号挿入機能（開始ページ・開始番号指定可）
 
 ### 連携機能
 - 変換後の自動結合移行
@@ -26,7 +28,7 @@ Microsoft Officeファイル（Word、Excel、PowerPoint）と画像ファイル
 
 - **言語**: Python 3.9+
 - **GUIフレームワーク**: CustomTkinter
-- **PDF処理**: PyPDF2, ReportLab
+- **PDF処理**: PyMuPDF, reportlab
 - **Office変換**: python-docx, openpyxl, python-pptx
 - **画像処理**: Pillow
 - **パッケージング**: PyInstaller
