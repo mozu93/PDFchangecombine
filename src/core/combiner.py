@@ -89,11 +89,26 @@ class PDFCombiner:
                     if add_blank_page and len(reader) % 2 != 0:
                         temp_doc = fitz.open()
                         temp_doc.insert_pdf(reader)
-                        last_page = temp_doc[-1]
-                        temp_doc.new_page(width=last_page.rect.width, height=last_page.rect.height)
+
+                        # 最終ページの情報を安全に取得
+                        last_page_index = len(temp_doc) - 1
+                        last_page = temp_doc[last_page_index]
+
+                        # 回転とサイズ情報を取得
+                        rotation = last_page.rotation
+                        mediabox = last_page.mediabox
+
+                        # 回転を考慮したサイズで白紙ページを作成
+                        blank_page = temp_doc.new_page(width=mediabox.width, height=mediabox.height)
+
+                        # 回転情報を適用
+                        if rotation != 0:
+                            blank_page_index = len(temp_doc) - 1
+                            temp_doc[blank_page_index].set_rotation(rotation)
+
                         writer.insert_pdf(temp_doc)
                         temp_doc.close()
-                        logger.info(f"白紙ページ追加: {Path(pdf_path).name}")
+                        logger.info(f"白紙ページ追加（回転{rotation}度対応）: {Path(pdf_path).name}")
                     else:
                         writer.insert_pdf(reader)
                     
@@ -124,25 +139,93 @@ class PDFCombiner:
                 for page_num in range(start_page - 1, len(writer)):
                     page = writer[page_num]
                     page_number_text = str(start_number + page_num - (start_page - 1))
-                    
-                    # テキストの幅を計算して中央揃え
-                    text_width = fitz.get_text_length(page_number_text, fontname=font_name, fontsize=12)
-                    x = (page.rect.width - text_width) / 2
-                    y = page.rect.height - 28.35 # 下から10mm
 
+                    # 回転を考慮したページ番号配置
+                    original_rotation = page.rotation
+
+                    # 回転を一時的に0度にして正しい向きでページ番号を挿入
+                    if original_rotation != 0:
+                        page.set_rotation(0)
+
+                    # 0度状態での座標計算（テキストが正しい向きで表示される）
+                    text_width = fitz.get_text_length(page_number_text, fontname=font_name, fontsize=12)
+
+                    # 0度状態でのページサイズ取得
+                    page_width = page.rect.width
+                    page_height = page.rect.height
+
+                    # 回転別の正確な座標計算とrotateパラメータ
+                    if original_rotation == 0:
+                        # 0度: 通常の下部中央
+                        x = (page_width - text_width) / 2  # 水平中央
+                        y = page_height - 28.35  # 下端から10mm
+                        rotate_param = 0
+                    elif original_rotation == 90:
+                        # 90度回転: 右側中央が下部になる
+                        x = page_width - 28.35  # 右端から10mm
+                        y = (page_height - text_width) / 2  # 垂直中央
+                        rotate_param = -90
+                    elif original_rotation == 180:
+                        # 180度回転: 上部中央が下部になる
+                        x = (page_width - text_width) / 2  # 水平中央
+                        y = 28.35  # 上端から10mm
+                        rotate_param = 180
+                    elif original_rotation == 270:
+                        # 270度回転: 左側中央が下部になる
+                        x = 28.35  # 左端から10mm
+                        y = (page_height - text_width) / 2  # 垂直中央
+                        rotate_param = -90
+                    else:
+                        # その他の角度: デフォルト
+                        x = (page_width - text_width) / 2  # 水平中央
+                        y = page_height - 28.35  # 下端から10mm
+                        rotate_param = 0
+
+                    logger.info(f"ページ番号座標（元回転{original_rotation}度、0度状態での配置）: x={x:.1f}, y={y:.1f}, rotate={rotate_param}")
+
+                    # ページ番号を挿入（全回転角度に対応）
                     page.insert_text((x, y),
                                      page_number_text,
                                      fontname=font_name,
                                      fontsize=12,
-                                     color=(0, 0, 0))
+                                     color=(0, 0, 0),
+                                     rotate=rotate_param)
+
+                    # 回転を元に戻す
+                    if original_rotation != 0:
+                        page.set_rotation(original_rotation)
+
+                    # logger.debug(f"ページ番号挿入: ページ{page_num+1}, 回転{original_rotation}度")
                 logger.info("ページ番号の挿入完了")
 
             # 結合PDFファイル保存
             self._ensure_output_directory(output_path)
             result.total_pages = len(writer)
 
-            writer.save(output_path, garbage=0, deflate=False)
-            writer.close()
+            logger.info(f"PDF保存開始: {output_path}")
+            logger.info(f"保存ページ数: {result.total_pages}")
+            logger.info(f"出力ディレクトリ: {Path(output_path).parent}")
+            logger.info(f"ディレクトリ存在確認: {Path(output_path).parent.exists()}")
+
+            try:
+                writer.save(output_path, garbage=0, deflate=False)
+                logger.info(f"PDF保存処理完了: {output_path}")
+
+                # 保存後の検証
+                if Path(output_path).exists():
+                    file_size = Path(output_path).stat().st_size
+                    logger.info(f"保存ファイル確認OK: {file_size:,} bytes")
+                else:
+                    logger.error(f"保存ファイルが見つかりません: {output_path}")
+                    result.error_message = "保存ファイルの作成に失敗しました"
+                    return result
+
+            except Exception as save_error:
+                logger.error(f"PDF保存エラー: {save_error}")
+                result.error_message = f"ファイル保存エラー: {str(save_error)}"
+                return result
+            finally:
+                writer.close()
 
             # 結果設定
             result.success = True
@@ -206,10 +289,25 @@ class PDFCombiner:
 
     def _ensure_output_directory(self, output_path: str) -> None:
         """出力ディレクトリの確保"""
-        output_dir = Path(output_path).parent
-        if not output_dir.exists():
-            output_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"出力ディレクトリ作成: {output_dir}")
+        try:
+            output_dir = Path(output_path).parent
+            logger.info(f"出力ディレクトリチェック: {output_dir}")
+
+            if not output_dir.exists():
+                logger.info(f"ディレクトリが存在しないため作成します: {output_dir}")
+                output_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"出力ディレクトリ作成完了: {output_dir}")
+            else:
+                logger.info(f"出力ディレクトリ確認OK: {output_dir}")
+
+            # 書き込み権限チェック
+            if not os.access(output_dir, os.W_OK):
+                logger.error(f"出力ディレクトリに書き込み権限がありません: {output_dir}")
+                raise PermissionError(f"書き込み権限がありません: {output_dir}")
+
+        except Exception as e:
+            logger.error(f"出力ディレクトリ準備エラー: {e}")
+            raise
 
     def get_pdf_info(self, pdf_path: str) -> dict:
         """PDF情報の取得"""
