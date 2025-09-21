@@ -19,10 +19,12 @@ class SecurityValidator:
         r'\.\./',      # Path traversal
         r'\.\.\.',     # Multiple dots
         r'//+',        # Multiple slashes
-        r'[<>:"|?*]',  # Windows illegal characters
         r'[\x00-\x1f]', # Control characters
         r'CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]',  # Windows reserved names
     ]
+
+    # Windowsファイル名で禁止されている文字（パス部分は除外）
+    FILENAME_ILLEGAL_CHARS = r'[<>"|?*]'
 
     # 許可されるファイル拡張子（設定ファイルと同期）
     ALLOWED_EXTENSIONS = {
@@ -57,6 +59,12 @@ class SecurityValidator:
                 if re.search(pattern, file_path, re.IGNORECASE):
                     logger.warning(f"危険なパターン検出: {pattern} in {file_path}")
                     return False
+
+            # ファイル名部分のみで禁止文字チェック
+            filename_only = normalized_path.name
+            if re.search(cls.FILENAME_ILLEGAL_CHARS, filename_only):
+                logger.warning(f"ファイル名に禁止文字検出: {filename_only}")
+                return False
 
             # 基準ディレクトリ制限チェック
             if base_dir:

@@ -743,33 +743,33 @@ class UnifiedWindow:
                 # 重複を避けるために新しいファイルのみ追加
                 new_files = [f for f in pdf_files if f not in self.document_number_files]
                 if new_files:
-                # 任意Noモードでは1ファイルのみ許可
-                if self.numbering_type_var.get() == "任意No":
-                    if self.document_number_files:
-                        # 既にファイルがある場合は追加不可
-                        self.document_status.configure(text="任意Noモードでは1ファイルのみ対応です")
-                        return
-                    else:
-                        # 複数ファイルが選択された場合は最初の1つのみ
-                        new_files = new_files[:1]
+                    # 任意Noモードでは1ファイルのみ許可
+                    if self.numbering_type_var.get() == "任意No":
+                        if self.document_number_files:
+                            # 既にファイルがある場合は追加不可
+                            self.document_status.configure(text="任意Noモードでは1ファイルのみ対応です")
+                            return
+                        else:
+                            # 複数ファイルが選択された場合は最初の1つのみ
+                            new_files = new_files[:1]
 
-                self.document_number_files.extend(new_files)
+                    self.document_number_files.extend(new_files)
 
-                # 新しいファイルのチェックボックスを作成（結合モードと同じ）
-                for file_path in new_files:
-                    filename = Path(file_path).name
-                    checkbox = ctk.CTkCheckBox(
-                        self.document_list_frame,
-                        text=filename,
-                        font=ctk.CTkFont(size=13)
-                    )
-                    checkbox.pack(anchor="w", pady=2, padx=10)
-                    self.document_number_checkboxes[file_path] = checkbox
+                    # 新しいファイルのチェックボックスを作成（結合モードと同じ）
+                    for file_path in new_files:
+                        filename = Path(file_path).name
+                        checkbox = ctk.CTkCheckBox(
+                            self.document_list_frame,
+                            text=filename,
+                            font=ctk.CTkFont(size=13)
+                        )
+                        checkbox.pack(anchor="w", pady=2, padx=10)
+                        self.document_number_checkboxes[file_path] = checkbox
 
-                self._update_document_number_display()
-                logger.info(f"資料NO挿入ファイル追加: {len(new_files)}個")
-            else:
-                logger.info("重複ファイルのため追加されませんでした")
+                    self._update_document_number_display()
+                    logger.info(f"資料NO挿入ファイル追加: {len(new_files)}個")
+                else:
+                    logger.info("重複ファイルのため追加されませんでした")
             else:
                 self.document_status.configure(text="PDFファイルが見つかりませんでした")
 
@@ -1041,37 +1041,37 @@ class UnifiedWindow:
                 )
                 return
 
-        numbering_type = self.numbering_type_var.get()
+            numbering_type = self.numbering_type_var.get()
 
-        # 確認メッセージを生成
-        if numbering_type == "任意No":
-            preview = f"資料{number_value}"
-        elif numbering_type == "連番":
-            start_num = int(number_value) if number_value.isdigit() else 1
-            preview = f"資料{start_num}, 資料{start_num+1}, 資料{start_num+2}..."
-        elif numbering_type == "ハイフン連番":
-            preview = f"資料{number_value}-1, 資料{number_value}-2, 資料{number_value}-3..."
-        else:
-            preview = "資料1, 資料2, 資料3..."
+            # 確認メッセージを生成
+            if numbering_type == "任意No":
+                preview = f"資料{number_value}"
+            elif numbering_type == "連番":
+                start_num = int(number_value) if number_value.isdigit() else 1
+                preview = f"資料{start_num}, 資料{start_num+1}, 資料{start_num+2}..."
+            elif numbering_type == "ハイフン連番":
+                preview = f"資料{number_value}-1, 資料{number_value}-2, 資料{number_value}-3..."
+            else:
+                preview = "資料1, 資料2, 資料3..."
 
-        # 確認メッセージ
-        result = messagebox.askyesno(
-            "連番資料NO挿入の確認",
-            f"以下の内容で連番資料NO挿入を実行しますか？\n\n"
-            f"• 対象ファイル数: {len(self.document_number_files)}個\n"
-            f"• 連番タイプ: {numbering_type}\n"
-            f"• 番号パターン: {preview}\n\n"
-            f"注意: 元ファイルは「元ファイル」フォルダに自動バックアップされ、\n"
-            f"同じファイル名で資料NO挿入済みファイルが保存されます。"
-        )
+            # 確認メッセージ
+            result = messagebox.askyesno(
+                "連番資料NO挿入の確認",
+                f"以下の内容で連番資料NO挿入を実行しますか？\n\n"
+                f"• 対象ファイル数: {len(self.document_number_files)}個\n"
+                f"• 連番タイプ: {numbering_type}\n"
+                f"• 番号パターン: {preview}\n\n"
+                f"注意: 元ファイルは「元ファイル」フォルダに自動バックアップされ、\n"
+                f"同じファイル名で資料NO挿入済みファイルが保存されます。"
+            )
 
-        if not result:
-            return
+            if not result:
+                return
 
-        # UIを無効化
-        self.document_execute_btn.configure(state="disabled")
-        self.document_status.configure(text="資料NO挿入処理中...")
-        self.document_progress.set(0)
+            # UIを無効化
+            self.document_execute_btn.configure(state="disabled")
+            self.document_status.configure(text="資料NO挿入処理中...")
+            self.document_progress.set(0)
 
             # 別スレッドで処理実行
             thread = threading.Thread(target=self._run_sequential_number_insertion, args=(numbering_type, number_value))
@@ -1625,12 +1625,41 @@ class UnifiedWindow:
     def _on_closing(self) -> None:
         """アプリケーション終了処理"""
         logger.info("アプリケーション終了処理開始")
-        
-        if hasattr(self, 'pdf_converter'):
-            self.pdf_converter.cleanup()
-        
-        self.root.quit()
-        self.root.destroy()
+
+        try:
+            # PDF変換器のクリーンアップ
+            if hasattr(self, 'pdf_converter'):
+                self.pdf_converter.cleanup()
+
+            # PDF結合器のクリーンアップ
+            if hasattr(self, 'pdf_combiner'):
+                # 実行中の処理を停止
+                self.pdf_combiner = None
+
+            # Office COMオブジェクトの強制クリーンアップ
+            try:
+                import pythoncom
+                pythoncom.CoUninitialize()
+            except:
+                pass
+
+            # 一時ファイルの削除
+            try:
+                import tempfile
+                temp_dir = tempfile.gettempdir()
+                for temp_file in Path(temp_dir).glob("*.tmp"):
+                    if temp_file.name.endswith('.pdf.tmp'):
+                        temp_file.unlink(missing_ok=True)
+            except:
+                pass
+
+        except Exception as e:
+            logger.warning(f"終了処理中にエラー: {e}")
+
+        finally:
+            self.root.quit()
+            self.root.destroy()
+            logger.info("PDF変換・結合ツール 正常終了")
     
     def run(self) -> None:
         """アプリケーション実行"""

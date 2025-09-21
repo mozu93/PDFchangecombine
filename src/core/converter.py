@@ -144,9 +144,8 @@ class PDFConverter:
             if success and file_type != 'pdf':
                 try:
                     logger.info(f"PDF修復処理開始: {output_path}")
-                    doc = fitz.open(output_path)
-                    doc.save(output_path, garbage=4, deflate=True, clean=True)
-                    doc.close()
+                    with fitz.open(output_path) as doc:
+                        doc.save(output_path, garbage=4, deflate=True, clean=True)
                     logger.info(f"PDF修復処理完了: {output_path}")
                 except Exception as e:
                     logger.warning(f"PDF修復処理に失敗: {output_path} - {e}")

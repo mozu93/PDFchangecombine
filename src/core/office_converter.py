@@ -98,14 +98,22 @@ class OfficeConverter:
         word_app = None
         excel_app = None
         powerpoint_app = None
-        
+
         try:
             # Windowsの場合のみMicrosoft Officeを使用
             if os.name != 'nt':
                 return False
-            
+
             import win32com.client
             from pywintypes import com_error
+            import pythoncom
+
+            # COM初期化を確実に実行
+            try:
+                pythoncom.CoInitialize()
+                logger.info("COM初期化完了")
+            except:
+                logger.info("COM初期化済み（既に初期化されているか別スレッド）")
             file_ext = Path(input_path).suffix.lower()
             
             # 絶対パスに変換（COM API要件）
@@ -317,10 +325,39 @@ class OfficeConverter:
             # COM オブジェクトの確実なクリーンアップ
             try:
                 if word_app:
+                    # 全てのドキュメントを強制クローズ
+                    try:
+                        for doc in word_app.Documents:
+                            doc.Close(SaveChanges=False)
+                    except:
+                        pass
                     word_app.Quit()
+                    # COMオブジェクトの明示的解放
+                    del word_app
+
                 if excel_app:
+                    # 全てのワークブックを強制クローズ
+                    try:
+                        for wb in excel_app.Workbooks:
+                            wb.Close(SaveChanges=False)
+                    except:
+                        pass
                     excel_app.Quit()
+                    del excel_app
+
                 if powerpoint_app:
+                    # 全てのプレゼンテーションを強制クローズ
+                    try:
+                        for pres in powerpoint_app.Presentations:
+                            pres.Close()
+                    except:
+                        pass
                     powerpoint_app.Quit()
-            except:
+                    del powerpoint_app
+
+                # COMライブラリのクリーンアップ（個別変換では行わない）
+                # アプリケーション終了時のみCoUninitializeを実行
+
+            except Exception as cleanup_error:
+                logger.warning(f"COM クリーンアップエラー: {cleanup_error}")
                 pass
