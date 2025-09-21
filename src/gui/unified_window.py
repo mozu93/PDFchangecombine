@@ -28,6 +28,7 @@ from ..utils.logger import logger
 from ..utils.drag_drop import drag_drop_handler
 from ..utils.file_utils import FileScanner
 from ..utils.security import SecurityValidator, InputValidator
+from .draggable_list import DraggableFileList
 from ..utils.error_handler import error_handler, ErrorSeverity
 from ..core.converter import PDFConverter
 from ..core.combiner import PDFCombiner
@@ -68,8 +69,7 @@ class UnifiedWindow:
         self.conversion_files: List[str] = []
         self.combination_files: List[str] = []
         self.combination_checkboxes: Dict[str, ctk.CTkCheckBox] = {}
-        self.document_number_files: List[str] = []  # 資料NO挿入用ファイル
-        self.document_number_checkboxes: Dict[str, ctk.CTkCheckBox] = {}  # 資料NO挿入用チェックボックス
+        self.document_number_files: List[str] = []  # 資料NO挿入用ファイル（旧式、互換性のため残す）
 
         # チェックボックス管理
         self.file_checkboxes = {}  # 変換用ファイルチェックボックス
@@ -303,19 +303,23 @@ class UnifiedWindow:
         )
         self.combination_count_label.pack(side="right", padx=10, pady=10)
         
-        # スクロール可能なファイルリスト（チェックボックス付き）
-        self.combination_list_frame = ctk.CTkScrollableFrame(
+        # ドラッグアンドドロップ対応ファイルリスト
+        self.combination_draggable_list = DraggableFileList(
             self.combination_tab,
-            height=200,  # 450×700ウィンドウに最適な高さ
-            label_text="📋 PDFファイル結合リスト"
+            height=200,
+            label_text="📋 PDFファイル結合リスト（ドラッグで並び替え可能）"
         )
-        self.combination_list_frame.pack(fill="both", expand=True, padx=15, pady=8)
-        
-        # 初期メッセージ
+        self.combination_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
+
+        # ドラッグリストのコールバック設定
+        self.combination_draggable_list.on_selection_change = self._on_combination_selection_change
+        self.combination_draggable_list.on_order_change = self._on_combination_order_change
+
+        # 初期メッセージ（空の時に表示）
         button_color = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
         self.combination_list_msg = ctk.CTkLabel(
-            self.combination_list_frame,
-            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・「↑」「↓」ボタンで順序を変更できます\n\n\n\n\n",
+            self.combination_draggable_list,
+            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・ドラッグで順序変更、↑↓ボタンでも調整可能\n\n\n\n\n",
             font=ctk.CTkFont(size=12),
             justify="left",
             fg_color=button_color,
@@ -511,19 +515,23 @@ class UnifiedWindow:
         )
         self.document_count_label.pack(side="right", padx=10, pady=10)
 
-        # スクロール可能なファイルリスト
-        self.document_list_frame = ctk.CTkScrollableFrame(
+        # ドラッグアンドドロップ対応ファイルリスト
+        self.document_draggable_list = DraggableFileList(
             self.document_number_tab,
             height=200,
-            label_text="📋 資料NO挿入対象ファイルリスト"
+            label_text="📋 資料NO挿入対象ファイルリスト（ドラッグで並び替え可能）"
         )
-        self.document_list_frame.pack(fill="both", expand=True, padx=15, pady=8)
+        self.document_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
 
-        # 初期メッセージ
+        # ドラッグリストのコールバック設定
+        self.document_draggable_list.on_selection_change = self._on_document_selection_change
+        self.document_draggable_list.on_order_change = self._on_document_order_change
+
+        # 初期メッセージ（空の時に表示）
         button_color = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
         self.document_list_msg = ctk.CTkLabel(
-            self.document_list_frame,
-            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・フォント: Meiryo、四角囲い文字で表示\n・全ての回転角度（0°, 90°, 180°, 270°）に対応\n・ファイル順序は↑↓ボタンで調整可能\n\n\n",
+            self.document_draggable_list,
+            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・フォント: Meiryo、四角囲い文字で表示\n・全ての回転角度（0°, 90°, 180°, 270°）に対応\n・ドラッグで順序変更、↑↓ボタンでも調整可能\n\n\n",
             font=ctk.CTkFont(size=12),
             justify="left",
             fg_color=button_color,
@@ -578,14 +586,14 @@ class UnifiedWindow:
             # 結合タブのドラッグ&ドロップ設定
             pdf_filter = drag_drop_handler.create_pdf_filter()
             drag_drop_handler.setup_drag_drop(
-                self.combination_list_frame,
+                self.combination_draggable_list,
                 self._add_combination_files,
                 pdf_filter
             )
 
             # 資料NO挿入タブのドラッグ&ドロップ設定
             drag_drop_handler.setup_drag_drop(
-                self.document_list_frame,
+                self.document_draggable_list,
                 self._add_document_number_files,
                 pdf_filter
             )
@@ -665,19 +673,12 @@ class UnifiedWindow:
             # 重複を避けるために新しいファイルのみ追加
             new_files = [f for f in pdf_files if f not in self.combination_files]
             if new_files:
+                # ドラッグアンドドロップリストにファイルを追加
+                self.combination_draggable_list.add_files(new_files)
+
+                # 旧式リストも互換性のため更新
                 self.combination_files.extend(new_files)
-                
-                # 新しいファイルのチェックボックスを作成
-                for file_path in new_files:
-                    filename = Path(file_path).name
-                    checkbox = ctk.CTkCheckBox(
-                        self.combination_list_frame,
-                        text=filename,
-                        font=ctk.CTkFont(size=13)
-                    )
-                    checkbox.pack(anchor="w", pady=2, padx=10)
-                    self.combination_checkboxes[file_path] = checkbox
-                
+
                 self._update_combination_display()
                 logger.info(f"結合ファイル追加: {len(new_files)}個")
             else:
@@ -713,6 +714,28 @@ class UnifiedWindow:
         
         if files:
             self._add_combination_files(list(files))
+
+    def _on_combination_selection_change(self, selected_files: List[str]) -> None:
+        """結合リストの選択変更時のコールバック"""
+        # ボタンの有効/無効を更新
+        has_selection = len(selected_files) > 0
+        self.combination_up_btn.configure(state="normal" if has_selection else "disabled")
+        self.combination_down_btn.configure(state="normal" if has_selection else "disabled")
+        self.combination_delete_btn.configure(state="normal" if has_selection else "disabled")
+
+        # ステータス更新
+        if has_selection:
+            self.combination_status.configure(text=f"{len(selected_files)}個のファイルを選択中")
+        else:
+            self.combination_status.configure(text="ファイルを選択してボタン操作するか、ドラッグで並び替えてください")
+
+    def _on_combination_order_change(self, file_paths: List[str]) -> None:
+        """結合リストの順序変更時のコールバック"""
+        # 旧式リストも同期
+        self.combination_files = file_paths.copy()
+        self._update_combination_display()
+        self.combination_status.configure(text="ファイル順序を変更しました")
+        logger.info(f"ドラッグでファイル順序変更: {len(file_paths)}個")
 
     def _select_document_number_files(self) -> None:
         """資料NO挿入ファイル選択ダイアログ"""
@@ -753,18 +776,11 @@ class UnifiedWindow:
                             # 複数ファイルが選択された場合は最初の1つのみ
                             new_files = new_files[:1]
 
-                    self.document_number_files.extend(new_files)
+                    # ドラッグアンドドロップリストにファイルを追加
+                    self.document_draggable_list.add_files(new_files)
 
-                    # 新しいファイルのチェックボックスを作成（結合モードと同じ）
-                    for file_path in new_files:
-                        filename = Path(file_path).name
-                        checkbox = ctk.CTkCheckBox(
-                            self.document_list_frame,
-                            text=filename,
-                            font=ctk.CTkFont(size=13)
-                        )
-                        checkbox.pack(anchor="w", pady=2, padx=10)
-                        self.document_number_checkboxes[file_path] = checkbox
+                    # 旧式リストも互換性のため更新
+                    self.document_number_files.extend(new_files)
 
                     self._update_document_number_display()
                     logger.info(f"資料NO挿入ファイル追加: {len(new_files)}個")
@@ -781,13 +797,36 @@ class UnifiedWindow:
                 "ファイルの追加中にエラーが発生しました。"
             )
 
+    def _on_document_selection_change(self, selected_files: List[str]) -> None:
+        """ドラッグリストの選択変更時のコールバック"""
+        # ボタンの有効/無効を更新
+        has_selection = len(selected_files) > 0
+        self.document_up_btn.configure(state="normal" if has_selection else "disabled")
+        self.document_down_btn.configure(state="normal" if has_selection else "disabled")
+        self.document_delete_btn.configure(state="normal" if has_selection else "disabled")
+
+        # ステータス更新
+        if has_selection:
+            self.document_status.configure(text=f"{len(selected_files)}個のファイルを選択中")
+        else:
+            self.document_status.configure(text="ファイルを選択してボタン操作するか、ドラッグで並び替えてください")
+
+    def _on_document_order_change(self, file_paths: List[str]) -> None:
+        """ドラッグリストの順序変更時のコールバック"""
+        # 旧式リストも同期
+        self.document_number_files = file_paths.copy()
+        self._update_document_number_display()
+        self.document_status.configure(text="ファイル順序を変更しました")
+        logger.info(f"ドラッグでファイル順序変更: {len(file_paths)}個")
+
     def _clear_document_number_files(self) -> None:
         """資料NO挿入ファイルクリア"""
+        # ドラッグリストをクリア
+        self.document_draggable_list.clear_files()
+
+        # 旧式リストもクリア（互換性のため）
         self.document_number_files.clear()
-        # 全てのチェックボックスを削除（結合モードと同じ）
-        for checkbox in self.document_number_checkboxes.values():
-            checkbox.destroy()
-        self.document_number_checkboxes.clear()
+
         self._update_document_number_display()
 
         self.document_execute_btn.configure(state="disabled")
@@ -795,91 +834,63 @@ class UnifiedWindow:
         self.document_count_label.configure(text="ファイル数: 0")
         self.document_status.configure(text="PDFファイルを追加して資料番号を入力してください")
 
+        # 初期メッセージを表示
+        self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
+
         logger.info("資料NO挿入ファイルリストクリア")
 
     def _move_document_up(self) -> None:
-        """選択した資料NO挿入ファイルを上に移動（結合モードと同じ）"""
+        """選択した資料NO挿入ファイルを上に移動"""
         try:
-            selected_files = []
-            for file_path, checkbox in self.document_number_checkboxes.items():
-                if checkbox.get():
-                    selected_files.append(file_path)
-
-            if not selected_files:
-                self.document_status.configure(text="移動するファイルを選択してください")
-                return
-
-            moved = False
-            for file_path in selected_files:
-                current_index = self.document_number_files.index(file_path)
-                if current_index > 0:
-                    self.document_number_files[current_index], self.document_number_files[current_index - 1] = \
-                        self.document_number_files[current_index - 1], self.document_number_files[current_index]
-                    moved = True
+            # ドラッグリストの移動メソッドを使用
+            moved = self.document_draggable_list.move_selected_up()
 
             if moved:
-                self._refresh_document_checkboxes()
-                self.document_status.configure(text="ファイルを上に移動しました")
-                logger.info(f"{len(selected_files)}件のファイルを上に移動")
+                self.document_status.configure(text="選択したファイルを上に移動しました")
+                logger.info("ボタンでファイルを上に移動")
             else:
-                self.document_status.configure(text="これ以上上に移動できません")
+                selected_files = self.document_draggable_list.get_selected_files()
+                if not selected_files:
+                    self.document_status.configure(text="移動するファイルを選択してください")
+                else:
+                    self.document_status.configure(text="これ以上上に移動できません")
 
         except Exception as e:
             logger.error(f"ファイル移動中にエラーが発生: {str(e)}")
             self.document_status.configure(text="移動中にエラーが発生しました")
 
     def _move_document_down(self) -> None:
-        """選択した資料NO挿入ファイルを下に移動（結合モードと同じ）"""
+        """選択した資料NO挿入ファイルを下に移動"""
         try:
-            selected_files = []
-            for file_path, checkbox in self.document_number_checkboxes.items():
-                if checkbox.get():
-                    selected_files.append(file_path)
-
-            if not selected_files:
-                self.document_status.configure(text="移動するファイルを選択してください")
-                return
-
-            moved = False
-            # 下に移動する時は逆順で処理
-            for file_path in reversed(selected_files):
-                current_index = self.document_number_files.index(file_path)
-                if current_index < len(self.document_number_files) - 1:
-                    self.document_number_files[current_index], self.document_number_files[current_index + 1] = \
-                        self.document_number_files[current_index + 1], self.document_number_files[current_index]
-                    moved = True
+            # ドラッグリストの移動メソッドを使用
+            moved = self.document_draggable_list.move_selected_down()
 
             if moved:
-                self._refresh_document_checkboxes()
-                self.document_status.configure(text="ファイルを下に移動しました")
-                logger.info(f"{len(selected_files)}件のファイルを下に移動")
+                self.document_status.configure(text="選択したファイルを下に移動しました")
+                logger.info("ボタンでファイルを下に移動")
             else:
-                self.document_status.configure(text="これ以上下に移動できません")
+                selected_files = self.document_draggable_list.get_selected_files()
+                if not selected_files:
+                    self.document_status.configure(text="移動するファイルを選択してください")
+                else:
+                    self.document_status.configure(text="これ以上下に移動できません")
 
         except Exception as e:
             logger.error(f"ファイル移動中にエラーが発生: {str(e)}")
             self.document_status.configure(text="移動中にエラーが発生しました")
 
     def _delete_selected_document(self) -> None:
-        """選択した資料NO挿入ファイルを削除（結合モードと同じ）"""
+        """選択した資料NO挿入ファイルを削除"""
         try:
-            selected_files = []
-            for file_path, checkbox in self.document_number_checkboxes.items():
-                if checkbox.get():
-                    selected_files.append(file_path)
+            selected_files = self.document_draggable_list.get_selected_files()
 
             if not selected_files:
                 self.document_status.configure(text="削除するファイルを選択してください")
                 return
 
             if messagebox.askyesno("確認", f"{len(selected_files)}件の選択されたファイルを削除しますか？"):
-                # 選択されたファイルを削除
-                for file_path in selected_files:
-                    if file_path in self.document_number_files:
-                        self.document_number_files.remove(file_path)
-                    if file_path in self.document_number_checkboxes:
-                        self.document_number_checkboxes[file_path].destroy()
-                        del self.document_number_checkboxes[file_path]
+                # ドラッグリストから削除
+                self.document_draggable_list.remove_selected_files()
 
                 self._update_document_number_display()
                 self.document_status.configure(text=f"{len(selected_files)}件のファイルを削除しました")
@@ -998,22 +1009,22 @@ class UnifiedWindow:
 
     def _update_document_number_display(self) -> None:
         """資料NO挿入タブ表示更新"""
-        if self.document_number_files:
+        # ドラッグリストと旧式リストを同期
+        current_files = self.document_draggable_list.get_files()
+        self.document_number_files = current_files
+
+        if current_files:
             # メッセージを非表示にして、ファイル数を更新
             self.document_list_msg.pack_forget()
             self.document_clear_btn.configure(state="normal")
-            self.document_count_label.configure(text=f"ファイル数: {len(self.document_number_files)}")
-            self.document_status.configure(text=f"{len(self.document_number_files)}個のPDFファイルが追加されました")
+            self.document_count_label.configure(text=f"ファイル数: {len(current_files)}")
+            self.document_status.configure(text=f"{len(current_files)}個のPDFファイルが追加されました")
 
             # 実行ボタンの状態更新
             self._update_execute_button_state()
         else:
             # ファイルがない場合は初期メッセージを表示
             self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
-            # 全てのチェックボックスを削除（結合モードと同じ）
-            for checkbox in self.document_number_checkboxes.values():
-                checkbox.destroy()
-            self.document_number_checkboxes.clear()
             self.document_execute_btn.configure(state="disabled")
             self.document_clear_btn.configure(state="disabled")
             self.document_count_label.configure(text="ファイル数: 0")
@@ -1188,30 +1199,31 @@ class UnifiedWindow:
     
     def _update_combination_display(self) -> None:
         """結合タブ表示更新"""
-        if self.combination_files:
+        # ドラッグリストと旧式リストを同期
+        current_files = self.combination_draggable_list.get_files()
+        self.combination_files = current_files
+
+        if current_files:
             # メッセージを非表示にして、ファイル数を更新
             self.combination_list_msg.pack_forget()
             self.combination_combine_btn.configure(state="normal")
-            self.combination_count_label.configure(text=f"ファイル数: {len(self.combination_files)}")
-            self.combination_status.configure(text=f"{len(self.combination_files)}個のPDFファイルが追加されました")
+            self.combination_count_label.configure(text=f"ファイル数: {len(current_files)}")
+            self.combination_status.configure(text=f"{len(current_files)}個のPDFファイルが追加されました")
         else:
             # ファイルがない場合は初期メッセージを表示
             self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
-            # 全てのチェックボックスを削除
-            for checkbox in self.combination_checkboxes.values():
-                checkbox.destroy()
-            self.combination_checkboxes.clear()
             self.combination_combine_btn.configure(state="disabled")
             self.combination_count_label.configure(text="ファイル数: 0")
             self.combination_status.configure(text="PDFファイルを追加してください")
-    
+
     def _clear_combination_files(self) -> None:
         """結合ファイルクリア"""
+        # ドラッグリストをクリア
+        self.combination_draggable_list.clear_files()
+
+        # 旧式リストもクリア（互換性のため）
         self.combination_files.clear()
-        # 全てのチェックボックスを削除
-        for checkbox in self.combination_checkboxes.values():
-            checkbox.destroy()
-        self.combination_checkboxes.clear()
+
         self._update_combination_display()
         
         self.combination_combine_btn.configure(state="disabled")
@@ -1223,91 +1235,56 @@ class UnifiedWindow:
     def _move_combination_up(self) -> None:
         """選択したPDFファイルを上に移動"""
         try:
-            selected_files = []
-            for file_path, checkbox in self.combination_checkboxes.items():
-                if checkbox.get():
-                    selected_files.append(file_path)
-            
-            if not selected_files:
-                self.combination_status.configure(text="移動するファイルを選択してください")
-                return
-            
-            moved = False
-            for file_path in selected_files:
-                current_index = self.combination_files.index(file_path)
-                if current_index > 0:
-                    # ファイルリスト内で上に移動
-                    self.combination_files[current_index], self.combination_files[current_index - 1] = \
-                        self.combination_files[current_index - 1], self.combination_files[current_index]
-                    moved = True
-            
+            # ドラッグリストの移動メソッドを使用
+            moved = self.combination_draggable_list.move_selected_up()
+
             if moved:
-                self._refresh_combination_checkboxes()
-                self.combination_status.configure(text="ファイルを上に移動しました")
-                logger.info(f"{len(selected_files)}件のファイルを上に移動")
+                self.combination_status.configure(text="選択したファイルを上に移動しました")
+                logger.info("ボタンでファイルを上に移動")
             else:
-                self.combination_status.configure(text="これ以上上に移動できません")
-                
+                selected_files = self.combination_draggable_list.get_selected_files()
+                if not selected_files:
+                    self.combination_status.configure(text="移動するファイルを選択してください")
+                else:
+                    self.combination_status.configure(text="これ以上上に移動できません")
+
         except Exception as e:
             logger.error(f"ファイル上移動中にエラーが発生: {str(e)}")
             self.combination_status.configure(text="移動中にエラーが発生しました")
-    
+
     def _move_combination_down(self) -> None:
         """選択したPDFファイルを下に移動"""
         try:
-            selected_files = []
-            for file_path, checkbox in self.combination_checkboxes.items():
-                if checkbox.get():
-                    selected_files.append(file_path)
-            
-            if not selected_files:
-                self.combination_status.configure(text="移動するファイルを選択してください")
-                return
-            
-            moved = False
-            # 下に移動する場合は逆順で処理（後ろから前へ）
-            for file_path in reversed(selected_files):
-                current_index = self.combination_files.index(file_path)
-                if current_index < len(self.combination_files) - 1:
-                    # ファイルリスト内で下に移動
-                    self.combination_files[current_index], self.combination_files[current_index + 1] = \
-                        self.combination_files[current_index + 1], self.combination_files[current_index]
-                    moved = True
-            
+            # ドラッグリストの移動メソッドを使用
+            moved = self.combination_draggable_list.move_selected_down()
+
             if moved:
-                self._refresh_combination_checkboxes()
-                self.combination_status.configure(text="ファイルを下に移動しました")
-                logger.info(f"{len(selected_files)}件のファイルを下に移動")
+                self.combination_status.configure(text="選択したファイルを下に移動しました")
+                logger.info("ボタンでファイルを下に移動")
             else:
-                self.combination_status.configure(text="これ以上下に移動できません")
-                
+                selected_files = self.combination_draggable_list.get_selected_files()
+                if not selected_files:
+                    self.combination_status.configure(text="移動するファイルを選択してください")
+                else:
+                    self.combination_status.configure(text="これ以上下に移動できません")
+
         except Exception as e:
             logger.error(f"ファイル下移動中にエラーが発生: {str(e)}")
             self.combination_status.configure(text="移動中にエラーが発生しました")
-    
+
     def _delete_selected_combination(self) -> None:
         """選択したPDFファイルを削除"""
         try:
-            selected_files = []
-            for file_path, checkbox in self.combination_checkboxes.items():
-                if checkbox.get():
-                    selected_files.append(file_path)
+            selected_files = self.combination_draggable_list.get_selected_files()
             
             if not selected_files:
                 self.combination_status.configure(text="削除するファイルを選択してください")
                 return
             
-            # 確認ダイアログ
-            import tkinter.messagebox as messagebox
             if messagebox.askyesno("確認", f"{len(selected_files)}件の選択されたファイルを削除しますか？"):
-                # 選択されたファイルを削除
-                for file_path in selected_files:
-                    if file_path in self.combination_files:
-                        self.combination_files.remove(file_path)
-                    if file_path in self.combination_checkboxes:
-                        self.combination_checkboxes[file_path].destroy()
-                        del self.combination_checkboxes[file_path]
-                
+                # ドラッグリストから削除
+                self.combination_draggable_list.remove_selected_files()
+
                 self._update_combination_display()
                 self.combination_status.configure(text=f"{len(selected_files)}件のファイルを削除しました")
                 logger.info(f"{len(selected_files)}件のPDFファイルを削除しました")
