@@ -1483,6 +1483,8 @@ class UnifiedWindow:
         
         def on_yes():
             dialog.destroy()
+            # 既存の結合ファイルリストをクリア
+            self._clear_combination_files()
             self._add_combination_files(pdf_files)
             self.tab_view.set("PDF結合")
         

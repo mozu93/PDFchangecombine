@@ -16,41 +16,56 @@ os.chdir(PROJECT_ROOT)
 
 def check_dependencies():
     """必要な依存関係チェック"""
-    print("📦 依存関係チェック中...")
+    print("依存関係チェック中...")
     
     required_packages = [
         'pyinstaller',
-        'customtkinter', 
+        'customtkinter',
         'tkinterdnd2',
         'pillow',
         'reportlab',
-        'PyPDF2',
+        'PyMuPDF',
         'python-docx',
         'openpyxl',
         'python-pptx'
     ]
     
     missing_packages = []
+
+    # パッケージ名とインポート名のマッピング
+    import_mapping = {
+        'pyinstaller': 'PyInstaller',
+        'customtkinter': 'customtkinter',
+        'tkinterdnd2': 'tkinterdnd2',
+        'pillow': 'PIL',
+        'reportlab': 'reportlab',
+        'PyMuPDF': 'fitz',
+        'python-docx': 'docx',
+        'openpyxl': 'openpyxl',
+        'python-pptx': 'pptx'
+    }
+
     for package in required_packages:
         try:
-            __import__(package.replace('-', '_'))
-            print(f"  ✅ {package}")
+            import_name = import_mapping.get(package, package.replace('-', '_'))
+            __import__(import_name)
+            print(f"  OK {package}")
         except ImportError:
             missing_packages.append(package)
-            print(f"  ❌ {package}")
-    
+            print(f"  NG {package}")
+
     if missing_packages:
-        print(f"\\n⚠️  未インストールパッケージ: {', '.join(missing_packages)}")
+        print(f"\\n未インストールパッケージ: {', '.join(missing_packages)}")
         print("以下のコマンドでインストールしてください:")
         print(f"pip install {' '.join(missing_packages)}")
         return False
-    
-    print("✅ 全ての依存関係が満たされています\\n")
+
+    print("全ての依存関係が満たされています\\n")
     return True
 
 def clean_build_directories():
     """ビルドディレクトリのクリーンアップ"""
-    print("🧹 ビルドディレクトリクリーンアップ中...")
+    print("ビルドディレクトリクリーンアップ中...")
     
     cleanup_dirs = ['build/work', 'dist', '__pycache__']
     cleanup_files = ['*.spec']
@@ -58,24 +73,24 @@ def clean_build_directories():
     for dir_path in cleanup_dirs:
         if Path(dir_path).exists():
             shutil.rmtree(dir_path)
-            print(f"  🗑️  {dir_path} を削除")
+            print(f"  削除: {dir_path}")
     
     for pattern in cleanup_files:
         for file_path in Path('.').glob(pattern):
             file_path.unlink()
-            print(f"  🗑️  {file_path} を削除")
-    
-    print("✅ クリーンアップ完了\\n")
+            print(f"  削除: {file_path}")
+
+    print("クリーンアップ完了\\n")
 
 def build_executable():
     """実行ファイルビルド実行"""
-    print("🔨 実行ファイルビルド開始...")
+    print("実行ファイルビルド開始...")
     
-    # PyInstallerコマンド構築
+    # PyInstallerコマンド構築（ワンフォルダ形式）
     cmd = [
         'pyinstaller',
-        '--onefile',
-        '--noconsole', 
+        '--onedir',  # ワンフォルダ形式に変更
+        '--noconsole',
         '--name=PDFConverter',
         '--distpath=dist',
         '--workpath=build/work',
@@ -87,12 +102,13 @@ def build_executable():
         
         # 隠蔽インポート
         '--hidden-import=customtkinter',
-        '--hidden-import=tkinterdnd2', 
+        '--hidden-import=tkinterdnd2',
         '--hidden-import=PIL',
         '--hidden-import=PIL.Image',
         '--hidden-import=reportlab',
         '--hidden-import=reportlab.pdfgen.canvas',
-        '--hidden-import=PyPDF2',
+        '--hidden-import=fitz',
+        '--hidden-import=PyMuPDF',
         '--hidden-import=docx',
         '--hidden-import=openpyxl',
         '--hidden-import=pptx',
@@ -119,10 +135,10 @@ def build_executable():
     
     try:
         result = subprocess.run(cmd, check=True, capture_output=False)
-        print("\\n✅ ビルド完了!")
+        print("\\nビルド完了!")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"\\n❌ ビルドエラー: {e}")
+        print(f"\\nビルドエラー: {e}")
         return False
 
 def create_version_file():
@@ -166,35 +182,47 @@ VSVersionInfo(
 
 def verify_build():
     """ビルド結果検証"""
-    print("\\n🔍 ビルド結果検証中...")
-    
+    print("\\nビルド結果検証中...")
+
+    # ワンフォルダ形式の場合のパス
     if sys.platform.startswith('win'):
-        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter.exe'
+        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter' / 'PDFConverter.exe'
+        dist_folder = PROJECT_ROOT / 'dist' / 'PDFConverter'
     elif sys.platform.startswith('darwin'):
-        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter'  # macOS
+        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter' / 'PDFConverter'  # macOS
+        dist_folder = PROJECT_ROOT / 'dist' / 'PDFConverter'
     else:
-        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter'  # Linux
+        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter' / 'PDFConverter'  # Linux
+        dist_folder = PROJECT_ROOT / 'dist' / 'PDFConverter'
     
     if exe_path.exists():
         file_size = exe_path.stat().st_size / (1024 * 1024)  # MB
-        print(f"✅ 実行ファイル生成成功: {exe_path}")
-        print(f"📊 ファイルサイズ: {file_size:.1f} MB")
-        
+        print(f"実行ファイル生成成功: {exe_path}")
+        print(f"実行ファイルサイズ: {file_size:.1f} MB")
+
+        # 配布フォルダのサイズ確認
+        if dist_folder.exists():
+            total_size = sum(f.stat().st_size for f in dist_folder.rglob('*') if f.is_file())
+            total_size_mb = total_size / (1024 * 1024)
+            file_count = len(list(dist_folder.rglob('*')))
+            print(f"配布フォルダサイズ: {total_size_mb:.1f} MB ({file_count} ファイル)")
+            print(f"配布フォルダ: {dist_folder}")
+
         # 実行権限確認 (Unix系)
         if not sys.platform.startswith('win'):
             if os.access(exe_path, os.X_OK):
-                print("✅ 実行権限: OK")
+                print("実行権限: OK")
             else:
-                print("⚠️  実行権限: なし（chmod +x が必要）")
-        
+                print("実行権限: なし（chmod +x が必要）")
+
         return True
     else:
-        print(f"❌ 実行ファイルが見つかりません: {exe_path}")
+        print(f"実行ファイルが見つかりません: {exe_path}")
         return False
 
 def main():
     """メイン処理"""
-    print("🚀 PDF変換・結合ツール ビルドスクリプト")
+    print("PDF変換・結合ツール ビルドスクリプト")
     print("=" * 50)
     
     # 前処理
@@ -205,26 +233,27 @@ def main():
     
     # ビルド実行
     if not build_executable():
-        print("\\n❌ ビルドに失敗しました")
+        print("\\nビルドに失敗しました")
         sys.exit(1)
     
     # 検証
     if verify_build():
-        print("\\n🎉 ビルド成功! dist/フォルダを確認してください")
+        print("\\nビルド成功! dist/フォルダを確認してください")
         
         # 次のステップ案内
-        print("\\n📝 次のステップ:")
-        print("  1. dist/PDFConverter.exe をテスト実行")
-        print("  2. 各種ファイル形式での変換テスト") 
-        print("  3. PDF結合機能のテスト")
-        print("  4. エラーハンドリングの確認")
+        print("\\n次のステップ:")
+        print("  1. dist/PDFConverter フォルダ全体をテスト環境にコピー")
+        print("  2. PDFConverter.exe をテスト実行")
+        print("  3. 各種ファイル形式での変換テスト")
+        print("  4. PDF結合機能のテスト")
+        print("  5. エラーハンドリングの確認")
         
         # 配布準備
         if sys.platform.startswith('win'):
-            print("  5. コード署名の実施 (signtool)")
+            print("  6. コード署名の実施 (signtool)")
         
     else:
-        print("\\n❌ ビルド検証に失敗しました")
+        print("\\nビルド検証に失敗しました")
         sys.exit(1)
 
 if __name__ == '__main__':
