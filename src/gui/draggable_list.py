@@ -1,0 +1,380 @@
+"""
+ドラッグアンドドロップ対応のカスタムリストコンポーネント
+"""
+
+import customtkinter as ctk
+from pathlib import Path
+from typing import List, Callable, Optional, Dict
+import tkinter as tk
+
+
+class DraggableListItem(ctk.CTkFrame):
+    """ドラッグ可能なリストアイテム"""
+
+    def __init__(self, parent, file_path: str, on_select: Callable, on_drag_start: Callable, **kwargs):
+        super().__init__(parent, **kwargs)
+
+        self.file_path = file_path
+        self.on_select = on_select
+        self.on_drag_start = on_drag_start
+        self.is_selected = False
+        self.is_dragging = False
+
+        self._setup_ui()
+        self._setup_drag_events()
+
+    def _setup_ui(self):
+        """UIセットアップ"""
+        self.configure(height=35, fg_color="transparent")
+
+        # チェックボックス
+        self.checkbox = ctk.CTkCheckBox(
+            self,
+            text="",
+            width=20,
+            command=self._on_checkbox_change
+        )
+        self.checkbox.pack(side="left", padx=(5, 10), pady=5)
+
+        # ファイル名ラベル
+        filename = Path(self.file_path).name
+        self.label = ctk.CTkLabel(
+            self,
+            text=filename,
+            anchor="w",
+            font=ctk.CTkFont(size=13)
+        )
+        self.label.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=5)
+
+        # ドラッグハンドル（見た目上の表示）
+        self.drag_handle = ctk.CTkLabel(
+            self,
+            text="⋮⋮",
+            width=20,
+            font=ctk.CTkFont(size=12),
+            text_color=("gray60", "gray40")
+        )
+        self.drag_handle.pack(side="right", padx=5, pady=5)
+
+    def _setup_drag_events(self):
+        """ドラッグイベントのセットアップ"""
+        # すべての子ウィジェットにもイベントを設定
+        widgets = [self, self.label, self.drag_handle]
+
+        for widget in widgets:
+            widget.bind("<Button-1>", self._on_click)
+            widget.bind("<B1-Motion>", self._on_drag)
+            widget.bind("<ButtonRelease-1>", self._on_release)
+            widget.bind("<Double-Button-1>", self._on_double_click)
+
+    def _on_checkbox_change(self):
+        """チェックボックス変更時の処理"""
+        self.is_selected = self.checkbox.get()
+        self.on_select(self.file_path, self.is_selected)
+        self._update_appearance()
+
+    def _on_click(self, event):
+        """クリック開始"""
+        self.start_x = event.x_root
+        self.start_y = event.y_root
+        self.is_dragging = False
+
+    def _on_drag(self, event):
+        """ドラッグ中"""
+        # ドラッグ開始判定（5ピクセル以上移動した場合）
+        if not self.is_dragging and (
+            abs(event.x_root - self.start_x) > 5 or
+            abs(event.y_root - self.start_y) > 5
+        ):
+            self.is_dragging = True
+            self.on_drag_start(self, event)
+
+    def _on_release(self, event):
+        """ドラッグ終了"""
+        if self.is_dragging:
+            self.is_dragging = False
+
+    def _on_double_click(self, event):
+        """ダブルクリック（チェックボックス切り替え）"""
+        self.checkbox.toggle()
+        self._on_checkbox_change()
+
+    def set_selected(self, selected: bool):
+        """選択状態の設定"""
+        self.is_selected = selected
+        self.checkbox.set(selected)
+        self._update_appearance()
+
+    def _update_appearance(self):
+        """外観の更新"""
+        if self.is_selected:
+            # より目立つ色に変更：オレンジ系（親フレームと子ウィジェット両方）
+            bg_color = ("#FFE0B2", "#FF8C00")
+            self.configure(fg_color=bg_color)
+            # 子ウィジェットの背景色も変更
+            self.label.configure(fg_color=bg_color)
+            self.drag_handle.configure(fg_color=bg_color)
+        else:
+            bg_color = "transparent"
+            self.configure(fg_color=bg_color)
+            # 子ウィジェットも透明に戻す
+            self.label.configure(fg_color=bg_color)
+            self.drag_handle.configure(fg_color=bg_color)
+
+
+class DraggableFileList(ctk.CTkScrollableFrame):
+    """ドラッグアンドドロップ対応のファイルリスト"""
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, **kwargs)
+
+        self.file_paths: List[str] = []
+        self.items: Dict[str, DraggableListItem] = {}
+        self.selected_files: List[str] = []
+        self.drag_source: Optional[DraggableListItem] = None
+        self.drop_target_index: int = -1
+
+        # ドロップ位置を示すインジケーター
+        self.drop_indicator = None
+
+        # コールバック
+        self.on_selection_change: Optional[Callable] = None
+        self.on_order_change: Optional[Callable] = None
+
+    def add_file(self, file_path: str):
+        """ファイルを追加"""
+        if file_path not in self.file_paths:
+            self.file_paths.append(file_path)
+            self._create_item(file_path)
+            self._update_display()
+
+    def add_files(self, file_paths: List[str]):
+        """複数ファイルを追加"""
+        new_files = [f for f in file_paths if f not in self.file_paths]
+        self.file_paths.extend(new_files)
+
+        for file_path in new_files:
+            self._create_item(file_path)
+
+        self._update_display()
+
+    def remove_selected_files(self):
+        """選択されたファイルを削除"""
+        for file_path in self.selected_files[:]:
+            self.remove_file(file_path)
+
+    def remove_file(self, file_path: str):
+        """ファイルを削除"""
+        if file_path in self.file_paths:
+            self.file_paths.remove(file_path)
+
+            if file_path in self.items:
+                self.items[file_path].destroy()
+                del self.items[file_path]
+
+            if file_path in self.selected_files:
+                self.selected_files.remove(file_path)
+
+            self._update_display()
+
+    def clear_files(self):
+        """すべてのファイルをクリア"""
+        for item in self.items.values():
+            item.destroy()
+
+        self.file_paths.clear()
+        self.items.clear()
+        self.selected_files.clear()
+        self._update_display()
+
+    def get_files(self) -> List[str]:
+        """ファイルパスのリストを取得"""
+        return self.file_paths.copy()
+
+    def get_selected_files(self) -> List[str]:
+        """選択されたファイルのリストを取得"""
+        return self.selected_files.copy()
+
+    def _create_item(self, file_path: str):
+        """リストアイテムの作成"""
+        item = DraggableListItem(
+            self,
+            file_path,
+            on_select=self._on_item_select,
+            on_drag_start=self._on_drag_start,
+            height=35
+        )
+        self.items[file_path] = item
+
+    def _update_display(self):
+        """表示の更新"""
+        # 既存のアイテムを全て削除
+        for item in self.items.values():
+            item.pack_forget()
+
+        # 新しい順序で表示
+        for file_path in self.file_paths:
+            if file_path in self.items:
+                self.items[file_path].pack(fill="x", padx=5, pady=2)
+
+        # コールバック呼び出し
+        if self.on_order_change:
+            self.on_order_change(self.file_paths)
+
+    def _on_item_select(self, file_path: str, selected: bool):
+        """アイテム選択時の処理"""
+        if selected and file_path not in self.selected_files:
+            self.selected_files.append(file_path)
+        elif not selected and file_path in self.selected_files:
+            self.selected_files.remove(file_path)
+
+        # 全てのアイテムの外観を更新
+        self._update_all_appearances()
+
+        if self.on_selection_change:
+            self.on_selection_change(self.selected_files)
+
+    def _update_all_appearances(self):
+        """全アイテムの外観を更新"""
+        for file_path, item in self.items.items():
+            item.is_selected = file_path in self.selected_files
+            item._update_appearance()
+
+    def update_selection_appearance(self, selected_files: List[str]):
+        """外部から選択状態の外観を更新"""
+        self.selected_files = selected_files[:]
+        self._update_all_appearances()
+
+    def _on_drag_start(self, item: DraggableListItem, event):
+        """ドラッグ開始時の処理"""
+        self.drag_source = item
+
+        # ドロップインジケーターの作成
+        if not self.drop_indicator:
+            self.drop_indicator = ctk.CTkFrame(
+                self,
+                height=2,
+                fg_color=("blue", "lightblue")
+            )
+
+        # マウス座標に基づいてドロップ位置を計算
+        self._update_drop_position(event)
+
+        # ドラッグ中のイベントバインド
+        self.bind_all("<B1-Motion>", self._on_drag_motion)
+        self.bind_all("<ButtonRelease-1>", self._on_drag_end)
+
+    def _on_drag_motion(self, event):
+        """ドラッグ中の処理"""
+        if self.drag_source:
+            self._update_drop_position(event)
+
+    def _on_drag_end(self, event):
+        """ドラッグ終了時の処理"""
+        # イベントバインドを解除
+        self.unbind_all("<B1-Motion>")
+        self.unbind_all("<ButtonRelease-1>")
+
+        # ドロップインジケーターを非表示
+        if self.drop_indicator:
+            self.drop_indicator.pack_forget()
+
+        # ドロップ処理
+        if self.drag_source and self.drop_target_index >= 0:
+            self._perform_drop()
+
+        self.drag_source = None
+        self.drop_target_index = -1
+
+    def _update_drop_position(self, event):
+        """ドロップ位置の更新"""
+        # スクロール領域内のY座標を取得
+        widget_y = self.winfo_rooty()
+        relative_y = event.y_root - widget_y
+
+        # どのアイテムの間にドロップするかを計算
+        item_height = 39  # アイテムの高さ + パディング
+        target_index = min(max(0, relative_y // item_height), len(self.file_paths))
+
+        if target_index != self.drop_target_index:
+            self.drop_target_index = target_index
+            self._show_drop_indicator()
+
+    def _show_drop_indicator(self):
+        """ドロップインジケーターの表示"""
+        if not self.drop_indicator:
+            return
+
+        # インジケーターを非表示
+        self.drop_indicator.pack_forget()
+
+        # 新しい位置に表示
+        if 0 <= self.drop_target_index <= len(self.file_paths):
+            # 対象位置の前にインジケーターを挿入
+            target_item = None
+            if self.drop_target_index < len(self.file_paths):
+                target_file = self.file_paths[self.drop_target_index]
+                target_item = self.items.get(target_file)
+
+            if target_item:
+                self.drop_indicator.pack(fill="x", padx=5, before=target_item)
+            else:
+                # 最後に追加
+                self.drop_indicator.pack(fill="x", padx=5)
+
+    def _perform_drop(self):
+        """ドロップ処理の実行"""
+        if not self.drag_source:
+            return
+
+        source_file = self.drag_source.file_path
+        source_index = self.file_paths.index(source_file)
+
+        # ドロップ位置の調整
+        target_index = self.drop_target_index
+        if target_index > source_index:
+            target_index -= 1  # 元の位置より後ろにドロップする場合は調整
+
+        # ファイルリストの順序を変更
+        self.file_paths.pop(source_index)
+        self.file_paths.insert(target_index, source_file)
+
+        # 表示を更新
+        self._update_display()
+
+    def move_selected_up(self):
+        """選択されたファイルを上に移動"""
+        if not self.selected_files:
+            return False
+
+        moved = False
+        for file_path in self.selected_files:
+            current_index = self.file_paths.index(file_path)
+            if current_index > 0:
+                self.file_paths[current_index], self.file_paths[current_index - 1] = \
+                    self.file_paths[current_index - 1], self.file_paths[current_index]
+                moved = True
+
+        if moved:
+            self._update_display()
+
+        return moved
+
+    def move_selected_down(self):
+        """選択されたファイルを下に移動"""
+        if not self.selected_files:
+            return False
+
+        moved = False
+        # 下に移動する時は逆順で処理
+        for file_path in reversed(self.selected_files):
+            current_index = self.file_paths.index(file_path)
+            if current_index < len(self.file_paths) - 1:
+                self.file_paths[current_index], self.file_paths[current_index + 1] = \
+                    self.file_paths[current_index + 1], self.file_paths[current_index]
+                moved = True
+
+        if moved:
+            self._update_display()
+
+        return moved

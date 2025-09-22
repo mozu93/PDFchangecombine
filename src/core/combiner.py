@@ -1,0 +1,1380 @@
+"""
+PDF結合コアモジュール
+要件定義書 4.3 PDF結合モード機能の実装
+"""
+
+import os
+from pathlib import Path
+from typing import List, Optional
+import time
+import fitz  # PyMuPDF
+
+from ..utils.logger import logger
+from ..utils.file_utils import FileValidator
+
+
+class CombineResult:
+    """結合結果を保持するクラス"""
+
+    def __init__(self, output_path: str = "", success: bool = False,
+                 error_message: str = "", processed_files: List[str] = None):
+        self.output_path = output_path
+        self.success = success
+        self.error_message = error_message
+        self.processed_files = processed_files or []
+        self.processing_time = 0.0
+        self.total_pages = 0
+
+
+import io
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+class PDFCombiner:
+    """PDF結合メインクラス"""
+
+    def __init__(self):
+        logger.info("PDFコンバイナー初期化完了")
+        self._register_ms_gothic_font()
+
+    def _register_ms_gothic_font(self):
+        """MS明朝/MSゴシックフォントの登録"""
+        try:
+            # 複数のフォントパスを試行
+            font_paths = [
+                ("C:/Windows/Fonts/msmincho.ttc", "MS-Mincho", "MS明朝"),
+                ("C:/Windows/Fonts/msgothic.ttc", "MS-Gothic", "MSゴシック"),
+                ("C:/Windows/Fonts/meiryo.ttc", "Meiryo", "メイリオ"),
+                ("C:/Windows/Fonts/YuGothic.ttf", "Yu-Gothic", "游ゴシック")
+            ]
+
+            for font_path, font_name, display_name in font_paths:
+                if Path(font_path).exists():
+                    try:
+                        if font_path.endswith('.ttc'):
+                            # TrueType Collection (.ttc) の場合
+                            pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                        else:
+                            # 通常の TrueType (.ttf) の場合
+                            pdfmetrics.registerFont(TTFont(font_name, font_path))
+
+                        logger.info(f"{display_name}フォントを登録しました: {font_path}")
+                        self.font_name = font_name
+                        return
+                    except Exception as e:
+                        logger.warning(f"{display_name}フォント登録失敗: {e}")
+                        continue
+
+            # 全てのフォントで失敗した場合
+            raise FileNotFoundError("日本語フォントが見つかりません")
+
+        except Exception as e:
+            logger.warning(f"日本語フォント登録エラー: {e}。Courierで代替します")
+            self.font_name = "Courier"
+
+    def combine_pdfs(self, pdf_paths: List[str], output_path: str, 
+                    add_blank_page: bool = False,
+                    add_page_numbers: bool = False,
+                    start_page: int = 1,
+                    start_number: int = 1,
+                    progress_callback: Optional[callable] = None) -> CombineResult:
+        """
+        複数PDFファイルの結合（要件定義書 F-204）
+        """
+        start_time = time.time()
+        result = CombineResult(output_path=output_path)
+
+        if not pdf_paths:
+            result.error_message = "結合対象ファイルが指定されていません"
+            return result
+
+        try:
+            valid_files = self._validate_pdf_files(pdf_paths)
+            if not valid_files:
+                result.error_message = "有効なPDFファイルがありません"
+                return result
+
+            # PDF結合実行
+            writer = fitz.open()
+            processed_files = []
+
+            try:
+                for i, pdf_path in enumerate(valid_files):
+                    try:
+                        if progress_callback:
+                            progress = (i + 1) / len(valid_files) * 90 # 結合処理を90%とする
+                            progress_callback(f"結合中: {Path(pdf_path).name}", progress)
+
+                        with fitz.open(pdf_path) as reader:
+                            if add_blank_page and len(reader) % 2 != 0:
+                                with fitz.open() as temp_doc:
+                                    temp_doc.insert_pdf(reader)
+
+                                    # 最終ページの情報を安全に取得
+                                    last_page_index = len(temp_doc) - 1
+                                    last_page = temp_doc[last_page_index]
+
+                                    # 回転とサイズ情報を取得
+                                    rotation = last_page.rotation
+                                    mediabox = last_page.mediabox
+
+                                    # 回転を考慮したサイズで白紙ページを作成
+                                    blank_page = temp_doc.new_page(width=mediabox.width, height=mediabox.height)
+
+                                    # 回転情報を適用
+                                    if rotation != 0:
+                                        blank_page_index = len(temp_doc) - 1
+                                        temp_doc[blank_page_index].set_rotation(rotation)
+
+                                    writer.insert_pdf(temp_doc)
+                                    logger.info(f"白紙ページ追加（回転{rotation}度対応）: {Path(pdf_path).name}")
+                            else:
+                                writer.insert_pdf(reader)
+
+                        processed_files.append(pdf_path)
+                        logger.info(f"PDF追加完了: {Path(pdf_path).name}")
+
+                    except Exception as e:
+                        logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
+                        continue
+
+            finally:
+                pass  # try/finallyブロックの終了
+
+            if len(writer) == 0:
+                result.error_message = "結合可能なページがありませんでした"
+                return result
+
+            # ページ番号挿入
+            if add_page_numbers:
+                logger.info("ページ番号の挿入を開始")
+
+                # 一度クリーンなPDFを作成してからページ番号を挿入する
+                with fitz.open() as clean_doc:
+                    clean_doc.insert_pdf(writer)
+                    writer.close()
+                    writer = fitz.open()
+                    writer.insert_pdf(clean_doc)
+
+                font_name = "cour"
+
+                for page_num in range(start_page - 1, len(writer)):
+                    page = writer[page_num]
+                    page_number_text = str(start_number + page_num - (start_page - 1))
+
+                    # 回転を考慮したページ番号配置
+                    original_rotation = page.rotation
+
+                    # 回転を一時的に0度にして正しい向きでページ番号を挿入
+                    if original_rotation != 0:
+                        page.set_rotation(0)
+
+                    # 0度状態での座標計算（テキストが正しい向きで表示される）
+                    text_width = fitz.get_text_length(page_number_text, fontname=font_name, fontsize=12)
+
+                    # 0度状態でのページサイズ取得
+                    page_width = page.rect.width
+                    page_height = page.rect.height
+
+                    # 回転別の正確な座標計算とrotateパラメータ
+                    if original_rotation == 0:
+                        # 0度: 通常の下部中央
+                        x = (page_width - text_width) / 2  # 水平中央
+                        y = page_height - 28.35  # 下端から10mm
+                        rotate_param = 0
+                    elif original_rotation == 90:
+                        # 90度回転: 右側中央が下部になる
+                        x = page_width - 28.35  # 右端から10mm
+                        y = (page_height - text_width) / 2  # 垂直中央
+                        rotate_param = -90
+                    elif original_rotation == 180:
+                        # 180度回転: 上部中央が下部になる
+                        x = (page_width - text_width) / 2  # 水平中央
+                        y = 28.35  # 上端から10mm
+                        rotate_param = 180
+                    elif original_rotation == 270:
+                        # 270度回転: 左側中央が下部になる
+                        x = 28.35  # 左端から10mm
+                        y = (page_height - text_width) / 2  # 垂直中央
+                        rotate_param = -90
+                    else:
+                        # その他の角度: デフォルト
+                        x = (page_width - text_width) / 2  # 水平中央
+                        y = page_height - 28.35  # 下端から10mm
+                        rotate_param = 0
+
+                    logger.info(f"ページ番号座標（元回転{original_rotation}度、0度状態での配置）: x={x:.1f}, y={y:.1f}, rotate={rotate_param}")
+
+                    # ページ番号を挿入（全回転角度に対応）
+                    page.insert_text((x, y),
+                                     page_number_text,
+                                     fontname=font_name,
+                                     fontsize=12,
+                                     color=(0, 0, 0),
+                                     rotate=rotate_param)
+
+                    # 回転を元に戻す
+                    if original_rotation != 0:
+                        page.set_rotation(original_rotation)
+
+                    # logger.debug(f"ページ番号挿入: ページ{page_num+1}, 回転{original_rotation}度")
+                logger.info("ページ番号の挿入完了")
+
+            # 結合PDFファイル保存
+            self._ensure_output_directory(output_path)
+            result.total_pages = len(writer)
+
+            logger.info(f"PDF保存開始: {output_path}")
+            logger.info(f"保存ページ数: {result.total_pages}")
+            logger.info(f"出力ディレクトリ: {Path(output_path).parent}")
+            logger.info(f"ディレクトリ存在確認: {Path(output_path).parent.exists()}")
+
+            try:
+                writer.save(output_path, garbage=0, deflate=False)
+                logger.info(f"PDF保存処理完了: {output_path}")
+
+                # 保存後の検証
+                if Path(output_path).exists():
+                    file_size = Path(output_path).stat().st_size
+                    logger.info(f"保存ファイル確認OK: {file_size:,} bytes")
+                else:
+                    logger.error(f"保存ファイルが見つかりません: {output_path}")
+                    result.error_message = "保存ファイルの作成に失敗しました"
+                    return result
+
+            except Exception as save_error:
+                logger.error(f"PDF保存エラー: {save_error}")
+                result.error_message = f"ファイル保存エラー: {str(save_error)}"
+                return result
+
+            finally:
+                # writer の確実なクリーンアップ
+                try:
+                    if writer:
+                        writer.close()
+                except:
+                    pass
+
+            # 結果設定
+            result.success = True
+            result.processed_files = processed_files
+
+            # 進捗完了報告
+            if progress_callback:
+                progress_callback("結合完了", 100)
+
+            logger.info(f"PDF結合完了: {len(processed_files)}ファイル, {result.total_pages}ページ -> {Path(output_path).name}")
+
+        except Exception as e:
+            result.error_message = f"結合処理エラー: {str(e)}"
+            logger.error(f"PDF結合エラー: {str(e)}", exc_info=True)
+
+        finally:
+            result.processing_time = time.time() - start_time
+
+        return result
+        
+    def _validate_pdf_files(self, pdf_paths: List[str]) -> List[str]:
+        """PDF ファイル群の妥当性チェック"""
+        valid_files = []
+
+        for pdf_path in pdf_paths:
+            try:
+                # ファイル存在確認
+                if not Path(pdf_path).is_file():
+                    logger.warning(f"ファイルが存在しません: {pdf_path}")
+                    continue
+
+                # PDF拡張子チェック
+                if not pdf_path.lower().endswith('.pdf'):
+                    logger.warning(f"PDFファイルではありません: {pdf_path}")
+                    continue
+
+                # ファイル読み取り可能性チェック
+                if not FileValidator.is_readable_file(pdf_path):
+                    logger.warning(f"読み取り不可ファイル: {pdf_path}")
+                    continue
+
+                # PDF構造チェック（簡易）
+                try:
+                    with fitz.open(pdf_path) as doc:
+                        if doc.page_count == 0:
+                            logger.warning(f"空のPDFファイル: {pdf_path}")
+                            continue
+                except Exception:
+                    logger.warning(f"破損したPDFファイル: {pdf_path}")
+                    continue
+
+                valid_files.append(pdf_path)
+
+            except Exception as e:
+                logger.warning(f"PDFファイル妥当性チェックエラー: {pdf_path} - {str(e)}")
+                continue
+
+        return valid_files
+
+    def _ensure_output_directory(self, output_path: str) -> None:
+        """出力ディレクトリの確保"""
+        try:
+            output_dir = Path(output_path).parent
+            logger.info(f"出力ディレクトリチェック: {output_dir}")
+
+            if not output_dir.exists():
+                logger.info(f"ディレクトリが存在しないため作成します: {output_dir}")
+                output_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"出力ディレクトリ作成完了: {output_dir}")
+            else:
+                logger.info(f"出力ディレクトリ確認OK: {output_dir}")
+
+            # 書き込み権限チェック
+            if not os.access(output_dir, os.W_OK):
+                logger.error(f"出力ディレクトリに書き込み権限がありません: {output_dir}")
+                raise PermissionError(f"書き込み権限がありません: {output_dir}")
+
+        except Exception as e:
+            logger.error(f"出力ディレクトリ準備エラー: {e}")
+            raise
+
+    def get_pdf_info(self, pdf_path: str) -> dict:
+        """PDF情報の取得"""
+        try:
+            with fitz.open(pdf_path) as doc:
+                info = {
+                    'pages': doc.page_count,
+                    'file_size': Path(pdf_path).stat().st_size,
+                    'file_name': Path(pdf_path).name,
+                    'encrypted': doc.is_encrypted
+                }
+                return info
+
+        except Exception as e:
+            logger.error(f"PDF情報取得エラー: {pdf_path} - {str(e)}")
+            return {
+                'pages': 0,
+                'file_size': 0,
+                'file_name': Path(pdf_path).name,
+                'error': str(e)
+            }
+
+    def reorder_files(self, file_list: List[str], old_index: int, new_index: int) -> List[str]:
+        """
+        ファイルリストの順序変更（要件定義書 F-202）
+
+        Args:
+            file_list: 現在のファイルリスト
+            old_index: 移動元インデックス
+            new_index: 移動先インデックス
+
+        Returns:
+            List[str]: 順序変更後のファイルリスト
+        """
+        if not (0 <= old_index < len(file_list)) or not (0 <= new_index < len(file_list)):
+            logger.warning(f"無効なインデックス指定: {old_index} -> {new_index}")
+            return file_list
+
+        new_list = file_list.copy()
+        item = new_list.pop(old_index)
+        new_list.insert(new_index, item)
+
+        logger.info(f"ファイル順序変更: {old_index} -> {new_index}")
+        return new_list
+
+    def remove_file_from_list(self, file_list: List[str], index: int) -> List[str]:
+        """
+        ファイルリストからの削除（要件定義書 F-202）
+
+        Args:
+            file_list: 現在のファイルリスト
+            index: 削除対象インデックス
+
+        Returns:
+            List[str]: 削除後のファイルリスト
+        """
+        if not (0 <= index < len(file_list)):
+            logger.warning(f"無効なインデックス指定: {index}")
+            return file_list
+
+        new_list = file_list.copy()
+        removed_file = new_list.pop(index)
+
+        logger.info(f"ファイル削除: {Path(removed_file).name}")
+        return new_list
+
+    def add_document_numbers(self, pdf_paths: List[str], output_path: str,
+                           document_number: str,
+                           progress_callback: Optional[callable] = None) -> CombineResult:
+        """
+        PDFファイルに資料NO挿入（各ファイル個別処理・元ファイル同名保存）
+
+        Args:
+            pdf_paths: 対象PDFファイルパスのリスト
+            output_path: 使用しない（各ファイル同名で保存）
+            document_number: 資料番号（例: "1", "2", "1-1"）
+            progress_callback: 進捗コールバック関数
+
+        Returns:
+            CombineResult: 処理結果
+        """
+        start_time = time.time()
+        result = CombineResult(output_path="")
+
+        if not pdf_paths:
+            result.error_message = "対象ファイルが指定されていません"
+            return result
+
+        if not document_number.strip():
+            result.error_message = "資料番号が入力されていません"
+            return result
+
+        try:
+            valid_files = self._validate_pdf_files(pdf_paths)
+            if not valid_files:
+                result.error_message = "有効なPDFファイルがありません"
+                return result
+
+            processed_files = []
+            total_pages = 0
+
+            # 各ファイルを個別に処理
+            for i, pdf_path in enumerate(valid_files):
+                try:
+                    if progress_callback:
+                        progress = (i + 1) / len(valid_files) * 90
+                        progress_callback(f"処理中: {Path(pdf_path).name}", progress)
+
+                    # 元ファイルのバックアップと資料NO挿入
+                    success = self._process_single_pdf_with_backup(pdf_path, document_number)
+
+                    if success:
+                        processed_files.append(pdf_path)
+
+                        # ページ数をカウント
+                        with fitz.open(pdf_path) as doc:
+                            total_pages += len(doc)
+
+                        logger.info(f"資料NO挿入完了: {Path(pdf_path).name}")
+                    else:
+                        logger.error(f"資料NO挿入失敗: {Path(pdf_path).name}")
+
+                except Exception as e:
+                    logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
+                    continue
+
+            if not processed_files:
+                result.error_message = "処理可能なファイルがありませんでした"
+                return result
+
+
+            # 結果設定
+            result.success = True
+            result.processed_files = processed_files
+            result.total_pages = total_pages
+            result.output_path = f"{len(processed_files)}個のファイルに資料NO挿入完了"
+
+            # 進捗完了報告
+            if progress_callback:
+                progress_callback("資料NO挿入完了", 100)
+
+            logger.info(f"資料NO挿入完了: {len(processed_files)}ファイル, {total_pages}ページ")
+
+        except Exception as e:
+            result.error_message = f"資料NO挿入処理エラー: {str(e)}"
+            logger.error(f"資料NO挿入エラー: {str(e)}", exc_info=True)
+
+        finally:
+            result.processing_time = time.time() - start_time
+
+        return result
+
+    def add_sequential_document_numbers(self, pdf_paths: List[str], output_dir: str = "",
+                                      numbering_type: str = "basic", start_number: int = 1,
+                                      prefix_number: str = "1", document_prefix: str = "資料",
+                                      progress_callback: Optional[callable] = None) -> CombineResult:
+        """
+        複数PDFファイルに連番で資料NO挿入
+
+        Args:
+            pdf_paths: 対象PDFファイルパスのリスト
+            output_dir: 出力ディレクトリ（空文字で元フォルダ）
+            numbering_type: 連番タイプ ("basic", "start_at", "hyphen")
+            start_number: 開始番号（start_atとhyphenで使用）
+            prefix_number: ハイフン前の番号（hyphenで使用）
+            document_prefix: 文書プレフィックス（デフォルト: "資料"）
+            progress_callback: 進捗コールバック関数
+
+        Returns:
+            CombineResult: 処理結果
+
+        Examples:
+            # 基本連番: 資料1, 資料2, 資料3...
+            result = combiner.add_sequential_document_numbers(
+                pdf_paths=["doc1.pdf", "doc2.pdf", "doc3.pdf"],
+                numbering_type="basic"
+            )
+
+            # 任意スタート: 資料3, 資料4, 資料5...
+            result = combiner.add_sequential_document_numbers(
+                pdf_paths=["doc1.pdf", "doc2.pdf", "doc3.pdf"],
+                numbering_type="start_at",
+                start_number=3
+            )
+
+            # ハイフン付き: 資料1-1, 資料1-2, 資料1-3...
+            result = combiner.add_sequential_document_numbers(
+                pdf_paths=["doc1.pdf", "doc2.pdf", "doc3.pdf"],
+                numbering_type="hyphen",
+                prefix_number="1"
+            )
+        """
+        start_time = time.time()
+        result = CombineResult(output_path="")
+
+        if not pdf_paths:
+            result.error_message = "対象ファイルが指定されていません"
+            return result
+
+        if numbering_type not in ["basic", "start_at", "hyphen"]:
+            result.error_message = f"無効な連番タイプ: {numbering_type}. 'basic', 'start_at', 'hyphen'のいずれかを指定してください"
+            return result
+
+        try:
+            valid_files = self._validate_pdf_files(pdf_paths)
+            if not valid_files:
+                result.error_message = "有効なPDFファイルがありません"
+                return result
+
+            processed_files = []
+            total_pages = 0
+            failed_files = []
+
+            logger.info(f"連番挿入開始: {len(valid_files)}ファイル, タイプ={numbering_type}")
+
+            # 各ファイルを順次処理
+            for i, pdf_path in enumerate(valid_files):
+                try:
+                    # 進捗報告
+                    if progress_callback:
+                        progress = (i + 1) / len(valid_files) * 90
+                        file_name = Path(pdf_path).name
+                        progress_callback(f"処理中 ({i + 1}/{len(valid_files)}): {file_name}", progress)
+
+                    # 連番生成
+                    document_number = self._generate_document_number(
+                        index=i,
+                        numbering_type=numbering_type,
+                        start_number=start_number,
+                        prefix_number=prefix_number,
+                        document_prefix=document_prefix
+                    )
+
+                    logger.info(f"ファイル処理開始: {Path(pdf_path).name} → {document_number}")
+
+                    # 資料NO挿入実行
+                    success = self._process_single_pdf_with_backup(pdf_path, document_number)
+
+                    if success:
+                        processed_files.append(pdf_path)
+
+                        # ページ数をカウント
+                        with fitz.open(pdf_path) as doc:
+                            total_pages += len(doc)
+
+                        logger.info(f"資料NO挿入完了: {Path(pdf_path).name} → {document_number}")
+                    else:
+                        failed_files.append((pdf_path, f"処理失敗"))
+                        logger.error(f"資料NO挿入失敗: {Path(pdf_path).name}")
+
+                except Exception as e:
+                    failed_files.append((pdf_path, str(e)))
+                    logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
+                    continue
+
+            # 結果判定
+            if not processed_files:
+                result.error_message = "処理可能なファイルがありませんでした"
+                if failed_files:
+                    error_details = "\n".join([f"・{Path(path).name}: {error}" for path, error in failed_files])
+                    result.error_message += f"\n\n失敗詳細:\n{error_details}"
+                return result
+
+            # 成功結果設定
+            result.success = True
+            result.processed_files = processed_files
+            result.total_pages = total_pages
+
+            # 出力メッセージ作成
+            success_count = len(processed_files)
+            total_count = len(valid_files)
+            result.output_path = f"連番挿入完了: {success_count}/{total_count}ファイル処理済み"
+
+            if failed_files:
+                result.output_path += f" ({len(failed_files)}ファイル失敗)"
+
+            # 進捗完了報告
+            if progress_callback:
+                progress_callback("連番挿入完了", 100)
+
+            logger.info(f"連番挿入完了: {success_count}ファイル成功, {total_pages}ページ, {len(failed_files)}ファイル失敗")
+
+            # 失敗ファイルがある場合の警告ログ
+            if failed_files:
+                for path, error in failed_files:
+                    logger.warning(f"処理失敗: {Path(path).name} - {error}")
+
+        except Exception as e:
+            result.error_message = f"連番挿入処理エラー: {str(e)}"
+            logger.error(f"連番挿入エラー: {str(e)}", exc_info=True)
+
+        finally:
+            result.processing_time = time.time() - start_time
+
+        return result
+
+    def _generate_document_number(self, index: int, numbering_type: str, start_number: int,
+                                prefix_number: str, document_prefix: str) -> str:
+        """
+        インデックスに基づいて文書番号を生成
+
+        Args:
+            index: ファイルインデックス（0から開始）
+            numbering_type: 連番タイプ
+            start_number: 開始番号
+            prefix_number: ハイフン前の番号
+            document_prefix: 文書プレフィックス
+
+        Returns:
+            str: 生成された文書番号
+        """
+        if numbering_type == "basic":
+            # 基本連番: 資料1, 資料2, 資料3...
+            number = index + 1
+            return f"{number}"
+
+        elif numbering_type == "start_at":
+            # 任意スタート: 資料3, 資料4, 資料5...
+            number = start_number + index
+            return f"{number}"
+
+        elif numbering_type == "hyphen":
+            # ハイフン付き: 資料1-1, 資料1-2, 資料1-3...
+            suffix = index + 1
+            return f"{prefix_number}-{suffix}"
+
+        else:
+            # フォールバック（基本連番）
+            number = index + 1
+            return f"{number}"
+
+    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str) -> bool:
+        """
+        単一PDFファイルに資料NO挿入（元ファイルバックアップ付き）
+
+        Args:
+            pdf_path: 対象PDFファイルパス
+            document_number: 資料番号
+
+        Returns:
+            bool: 処理成功時True
+        """
+        try:
+            pdf_path_obj = Path(pdf_path)
+
+            # 元ファイルフォルダを作成
+            backup_dir = pdf_path_obj.parent / "元ファイル"
+            backup_dir.mkdir(exist_ok=True)
+
+            # 元ファイルをバックアップフォルダに移動
+            backup_path = backup_dir / pdf_path_obj.name
+
+            # 既存のバックアップファイルがあれば削除
+            if backup_path.exists():
+                backup_path.unlink()
+
+            # 元ファイルをバックアップフォルダにコピー
+            import shutil
+            shutil.copy2(pdf_path, backup_path)
+            logger.info(f"元ファイルをバックアップ: {backup_path}")
+
+            # PDFを開いて資料NO挿入（1ページ目のみ、フリーズ対策）
+            with fitz.open(pdf_path) as doc:
+                document_text = f"資料{document_number}"
+
+                # 1ページ目のみ処理
+                if len(doc) > 0:
+                    page = doc[0]  # 最初のページのみ
+
+                    # ページ情報を取得
+                    original_rotation = page.rotation
+
+                    # 0度にリセットして作業
+                    if original_rotation != 0:
+                        page.set_rotation(0)
+
+                page_width = page.rect.width
+                page_height = page.rect.height
+
+                # フォント設定
+                font_size = 20
+                font_file = self._get_japanese_font_file()
+
+                # テキスト幅計算（日本語テキストベース）
+                japanese_chars = len([c for c in document_text if ord(c) > 127])
+                ascii_chars = len(document_text) - japanese_chars
+                text_width = japanese_chars * font_size + ascii_chars * (font_size * 0.6)
+
+                # 座標計算（右上配置、回転対応）
+                margin = 28.35  # 10mm
+                if original_rotation == 0:
+                    x = page_width - text_width - margin
+                    y = margin + font_size
+                    rotate_param = 0
+                elif original_rotation == 90:
+                    x = margin
+                    y = margin + font_size
+                    rotate_param = -90
+                elif original_rotation == 180:
+                    x = margin + text_width
+                    y = page_height - margin
+                    rotate_param = 180
+                elif original_rotation == 270:
+                    x = page_width - margin
+                    y = page_height - margin
+                    rotate_param = -90
+                else:
+                    x = page_width - text_width - margin
+                    y = margin + font_size
+                    rotate_param = 0
+
+                # テキスト挿入（全回転角度でReportLabオーバーレイ使用）
+                try:
+                    if original_rotation in [90, 180, 270]:
+                        # 回転ページでReportLabオーバーレイを使用
+                        logger.info(f"{original_rotation}度回転ページでReportLabオーバーレイを使用")
+
+                        # 回転角度別の座標調整（右上角配置）
+                        if original_rotation == 90:
+                            # 90度回転: テキストを右上角に横向き配置
+                            overlay_x = page_width - margin - text_width
+                            overlay_y = page_height - margin - font_size
+                            logger.info(f"90度回転ページ用オーバーレイ座標（右上角横向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
+                        elif original_rotation == 180:
+                            # 180度回転: テキストを右上角に逆向き配置
+                            overlay_x = page_width - margin - text_width
+                            overlay_y = margin + font_size
+                            logger.info(f"180度回転ページ用オーバーレイ座標（右上角逆向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
+                        elif original_rotation == 270:
+                            # 270度回転: テキストを右上角に縦向き配置
+                            overlay_x = page_width - margin - font_size
+                            overlay_y = page_height - margin - text_width
+                            logger.info(f"270度回転ページ用オーバーレイ座標（右上角縦向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
+
+                        overlay_data = self._create_japanese_overlay_with_proper_embedding(
+                            page_width, page_height, document_text, overlay_x, overlay_y, font_size, original_rotation
+                        )
+
+                        if overlay_data:
+                            # オーバーレイを適用
+                            with fitz.open("pdf", overlay_data) as overlay_pdf:
+                                overlay_page = overlay_pdf[0]
+                                page.show_pdf_page(page.rect, overlay_pdf, 0)
+                            logger.info(f"{original_rotation}度回転ページ: ReportLabオーバーレイで挿入成功 {document_text}")
+
+                            # 四角囲いを描画
+                            self._draw_simple_rectangle(page, overlay_x, overlay_y, text_width, font_size, original_rotation)
+                        else:
+                            logger.warning(f"{original_rotation}度回転ページ: ReportLabオーバーレイ作成失敗")
+                            # フォールバック: 基本フォント
+                            page.insert_text(
+                                (overlay_x, overlay_y),
+                                document_text,
+                                fontname="cour",
+                                fontsize=font_size,
+                                color=(0, 0, 0)
+                            )
+                            logger.warning(f"{original_rotation}度回転ページ: Courierフォントでフォールバック")
+
+                    else:
+                        # 通常ページ（0度）の場合はReportLabオーバーレイ
+                        overlay_data = self._create_japanese_overlay_with_proper_embedding(
+                            page_width, page_height, document_text, x, y, font_size, rotate_param
+                        )
+
+                        if overlay_data:
+                            # オーバーレイを適用
+                            with fitz.open("pdf", overlay_data) as overlay_doc:
+                                page.show_pdf_page(page.rect, overlay_doc, 0)
+                            logger.info(f"ReportLab確実日本語オーバーレイで挿入: {document_text}")
+                        else:
+                            # ReportLab失敗時はひらがなでフォールバック
+                            kana_text = document_text.replace("資料", "シリョウ")
+                            page.insert_text(
+                                (x, y),
+                                kana_text,
+                                fontname="cour",
+                                fontsize=font_size,
+                                color=(0, 0, 0),
+                                rotate=rotate_param
+                            )
+                            logger.warning(f"ReportLab失敗、ひらがなで挿入: {kana_text}")
+
+                        # 四角囲いの描画（PyMuPDF）
+                        self._draw_simple_rectangle(page, x, y, text_width, font_size, rotate_param)
+
+                except Exception as e:
+                    logger.error(f"1ページ目テキスト挿入エラー: {e}")
+                    # エラー時の最終フォールバック
+                    try:
+                        fallback_text = "Doc " + document_text.replace("資料", "")
+                        page.insert_text((x, y), fallback_text, fontsize=font_size, color=(0, 0, 0))
+                        logger.warning(f"最終フォールバック: {fallback_text}")
+                    except Exception as fallback_error:
+                        logger.error(f"最終フォールバックも失敗: {fallback_error}")
+
+                # 回転を元に戻す
+                if original_rotation != 0:
+                    page.set_rotation(original_rotation)
+
+                    logger.info(f"1ページ目に資料NO挿入完了: {document_text}")
+                else:
+                    logger.warning("PDFにページが存在しません")
+
+                # 最適化された保存方式
+                # 一時ファイルに新規保存してから置き換え（フリーズ対策）
+                temp_path = pdf_path + ".tmp"
+                doc.save(temp_path, garbage=4, deflate=True, clean=True)
+
+            # 元ファイルを一時ファイルで置き換え（with文外で実行）
+            import shutil
+            shutil.move(temp_path, pdf_path)
+
+            logger.info(f"資料NO挿入完了: {pdf_path_obj.name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"単一PDF処理エラー ({pdf_path}): {e}")
+            return False
+
+    def _create_japanese_overlay_with_proper_embedding(self, page_width: float, page_height: float,
+                                                     document_text: str, x: float, y: float,
+                                                     font_size: float, rotate_param: int) -> bytes:
+        """
+        確実な日本語フォント埋め込みでReportLabオーバーレイを作成
+
+        Args:
+            page_width: ページ幅
+            page_height: ページ高さ
+            document_text: 挿入するテキスト
+            x: x座標
+            y: y座標
+            font_size: フォントサイズ
+            rotate_param: 回転角度
+
+        Returns:
+            bytes: 確実な日本語PDFオーバーレイ
+        """
+        try:
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            import io
+
+            # メモリ上にPDFを作成
+            packet = io.BytesIO()
+
+            # ReportLabキャンバス
+            c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+
+            # 日本語フォントを確実に登録（Regular版を優先）
+            font_registered = False
+            japanese_fonts = [
+                ("C:/Windows/Fonts/meiryo.ttc", "Meiryo"),
+                ("C:/Windows/Fonts/msgothic.ttc", "MS-Gothic"),
+                ("C:/Windows/Fonts/msmincho.ttc", "MS-Mincho"),
+            ]
+
+            for font_path, font_name in japanese_fonts:
+                if Path(font_path).exists() and not font_registered:
+                    try:
+                        # TTCファイルの場合、subfontIndex=0を試す（Regular版を優先）
+                        pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                        c.setFont(font_name, font_size)
+                        font_registered = True
+                        logger.info(f"ReportLab日本語フォント登録成功（Regular）: {font_name}")
+                        break
+                    except Exception as font_error:
+                        try:
+                            # subfontIndex=1（Bold版）をフォールバック
+                            bold_name = f"{font_name}-Bold"
+                            pdfmetrics.registerFont(TTFont(bold_name, font_path, subfontIndex=1))
+                            c.setFont(bold_name, font_size)
+                            font_registered = True
+                            logger.info(f"ReportLab日本語フォント登録成功（Bold）: {bold_name}")
+                            break
+                        except Exception as font_error2:
+                            logger.debug(f"フォント登録失敗: {font_name} - {font_error2}")
+
+            if not font_registered:
+                logger.warning("ReportLab日本語フォント登録失敗")
+                return None
+
+            # ページ回転に応じたテキスト描画
+            if rotate_param == 90:
+                # 90度回転ページの場合、通常横向きテキスト
+                draw_x = x
+                draw_y = page_height - y  # Y座標を反転
+                c.drawString(draw_x, draw_y, document_text)
+                logger.info(f"90度回転ページ: ReportLab座標({draw_x:.1f}, {draw_y:.1f})に横向きテキスト描画")
+            elif rotate_param == 180:
+                # 180度回転ページの場合、テキストを180度回転
+                draw_x = x
+                draw_y = page_height - y  # Y座標を反転
+
+                # テキストを180度回転させて描画
+                c.saveState()
+                c.translate(draw_x, draw_y)  # 描画位置に移動
+                c.rotate(180)  # 180度回転
+                c.drawString(0, 0, document_text)  # 回転後の原点に描画
+                c.restoreState()
+
+                logger.info(f"180度回転ページ: ReportLab座標({draw_x:.1f}, {draw_y:.1f})に180度回転テキスト描画")
+            elif rotate_param == 270:
+                # 270度回転ページの場合、テキストをマイナス90度回転
+                draw_x = x
+                draw_y = page_height - y  # Y座標を反転
+
+                # テキストをマイナス90度回転させて描画
+                c.saveState()
+                c.translate(draw_x, draw_y)  # 描画位置に移動
+                c.rotate(-90)  # マイナス90度回転
+                c.drawString(0, 0, document_text)  # 回転後の原点に描画
+                c.restoreState()
+
+                logger.info(f"270度回転ページ: ReportLab座標({draw_x:.1f}, {draw_y:.1f})にマイナス90度回転テキスト描画")
+            else:
+                # 通常ページ（0度）の場合
+                c.drawString(x, page_height - y, document_text)  # Y座標を反転
+
+            # PDFを完成
+            c.showPage()
+            c.save()
+
+            # バイナリデータを取得
+            packet.seek(0)
+            data = packet.getvalue()
+            packet.close()
+
+            return data
+
+        except Exception as e:
+            logger.error(f"ReportLab確実日本語オーバーレイ作成エラー: {e}")
+            return None
+
+    def _create_minimal_japanese_overlay(self, page_width: float, page_height: float,
+                                       document_text: str, x: float, y: float, font_size: float) -> bytes:
+        """
+        最小限のReportLabオーバーレイ（日本語表示専用）
+
+        Args:
+            page_width: ページ幅
+            page_height: ページ高さ
+            document_text: 挿入するテキスト
+            x: x座標
+            y: y座標
+            font_size: フォントサイズ
+
+        Returns:
+            bytes: 最小限のPDFオーバーレイ
+        """
+        try:
+            # メモリ上にPDFを作成
+            packet = io.BytesIO()
+
+            # ReportLabキャンバス（最小構成）
+            c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+
+            # フォント設定
+            try:
+                c.setFont(self.font_name, font_size)
+            except:
+                c.setFont("Helvetica", font_size)
+
+            # 日本語テキストの適切なエンコーディング
+            # UTF-8エンコーディングを明示的に処理
+            try:
+                # テキストが既にUnicodeかチェック
+                if isinstance(document_text, str):
+                    encoded_text = document_text
+                else:
+                    encoded_text = document_text.decode('utf-8') if isinstance(document_text, bytes) else str(document_text)
+
+                # ReportLabで日本語テキストを描画
+                c.drawString(x, y, encoded_text)
+
+            except Exception as text_error:
+                logger.warning(f"日本語テキスト描画エラー、代替手段を使用: {text_error}")
+                # 代替として英語版を描画
+                fallback_text = f"Doc{document_text.replace('資料', '')}"
+                c.drawString(x, y, fallback_text)
+
+            # PDFを完成（最小限）
+            c.showPage()
+            c.save()
+
+            # バイナリデータを取得
+            packet.seek(0)
+            data = packet.getvalue()
+            packet.close()
+
+            return data
+
+        except Exception as e:
+            logger.error(f"最小オーバーレイ作成エラー: {e}")
+            return b""
+
+    def _draw_simple_rectangle(self, page, x: float, y: float, text_width: float,
+                             font_size: float, rotate_param: int) -> None:
+        """
+        シンプルな四角囲い描画（フリーズ対策版）
+
+        Args:
+            page: PDF ページオブジェクト
+            x: テキストのx座標
+            y: テキストのy座標
+            text_width: テキスト幅
+            font_size: フォントサイズ
+            rotate_param: 回転パラメータ
+        """
+        try:
+            margin = 4
+            text_height = font_size * 0.8
+
+            # 回転に応じた四角形の座標計算（最適化版）
+            if rotate_param == 0:
+                # 0度：通常の四角囲い
+                rect = fitz.Rect(x - margin, y - text_height - margin,
+                               x + text_width + margin, y + margin)
+            elif rotate_param == 90:
+                # 90度回転：横向きテキスト用
+                x_adjust = 17  # 位置調整
+                rect = fitz.Rect(x - margin + x_adjust, y - text_height - margin,
+                               x + text_width + margin + x_adjust, y + margin)
+            elif rotate_param == 180:
+                # 180度回転：逆向きテキスト用
+                x_adjust = 17  # 位置調整
+                rect = fitz.Rect(x - text_width - margin + x_adjust, y - margin,
+                               x + margin + x_adjust, y + text_height + margin)
+            elif rotate_param == 270:
+                # 270度回転：縦向きテキスト用（幅と高さを交換）
+                x_adjust = 17  # 位置調整
+                rect = fitz.Rect(x - text_height - margin + x_adjust, y - margin,
+                               x + margin + x_adjust, y + text_width + margin)
+            elif rotate_param == -90:
+                # PyMuPDF用のマイナス90度
+                rect = fitz.Rect(x - margin, y - text_width - margin,
+                               x + text_height + margin, y + margin)
+            else:
+                # デフォルト
+                rect = fitz.Rect(x - margin, y - text_height - margin,
+                               x + text_width + margin, y + margin)
+
+            # 四角形を描画（シンプルに）
+            page.draw_rect(rect, color=(0, 0, 0), width=1.5)
+            logger.info(f"四角囲い描画完了: {rect}")
+
+        except Exception as e:
+            logger.error(f"四角囲い描画エラー: {e}")
+
+    def _create_optimized_text_overlay(self, page_width: float, page_height: float,
+                                     document_text: str, rotation: int) -> bytes:
+        """
+        ReportLabを使用した最適化版オーバーレイ作成（フリーズ対策）
+
+        Args:
+            page_width: ページ幅
+            page_height: ページ高さ
+            document_text: 挿入するテキスト
+            rotation: ページの回転角度
+
+        Returns:
+            bytes: 最適化されたPDFオーバーレイのバイナリデータ
+        """
+        try:
+            # メモリ上にPDFを作成
+            packet = io.BytesIO()
+
+            # ReportLabキャンバスを作成（最小サイズで最適化）
+            c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+
+            # フォント設定（最適化）
+            font_size = 20
+
+            try:
+                c.setFont(self.font_name, font_size)
+            except:
+                c.setFont("Helvetica", font_size)
+
+            # テキスト幅を高速計算
+            text_width = c.stringWidth(document_text, self.font_name, font_size)
+
+            # 座標計算（簡略化）
+            margin = 10 * 2.83465  # 10mmをポイントに変換
+            padding = 4
+
+            if rotation == 0:
+                x = page_width - text_width - margin
+                y = page_height - margin - font_size
+            elif rotation == 90:
+                x = margin
+                y = page_height - margin - font_size
+            elif rotation == 180:
+                x = margin + text_width
+                y = margin + font_size
+            elif rotation == 270:
+                x = page_width - margin
+                y = margin + font_size
+            else:
+                x = page_width - text_width - margin
+                y = page_height - margin - font_size
+
+            # テキスト描画（シンプルに）
+            c.drawString(x, y, document_text)
+
+            # 四角囲い描画（最適化）
+            text_height = font_size * 0.8
+            rect_x = x - padding
+            rect_y = y - padding
+            rect_width = text_width + (padding * 2)
+            rect_height = text_height + (padding * 2)
+
+            c.setStrokeColorRGB(0, 0, 0)
+            c.setLineWidth(1.5)
+            c.rect(rect_x, rect_y, rect_width, rect_height, fill=0, stroke=1)
+
+            # PDFを完成（最適化オプション）
+            c.showPage()
+            c.save()
+
+            # バイナリデータを取得
+            packet.seek(0)
+            data = packet.getvalue()
+            packet.close()
+
+            return data
+
+        except Exception as e:
+            logger.error(f"最適化オーバーレイ作成エラー: {e}")
+            return b""
+
+    def _create_text_overlay_with_reportlab(self, page_width: float, page_height: float,
+                                          document_text: str, rotation: int) -> bytes:
+        """
+        ReportLabを使用して日本語テキストのPDFオーバーレイを作成
+
+        Args:
+            page_width: ページ幅
+            page_height: ページ高さ
+            document_text: 挿入するテキスト（例："資料1-1"）
+            rotation: ページの回転角度（0, 90, 180, 270）
+
+        Returns:
+            bytes: PDFオーバーレイのバイナリデータ
+        """
+        try:
+            # メモリ上にPDFを作成
+            packet = io.BytesIO()
+
+            # ReportLabキャンバスを作成（ポイント単位）
+            c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+
+            # フォント設定
+            font_size = 20
+
+            # 日本語フォントを使用（事前に登録済み）
+            try:
+                c.setFont(self.font_name, font_size)
+                logger.info(f"ReportLabで{self.font_name}フォントを使用")
+            except Exception as e:
+                logger.warning(f"フォント設定エラー: {e}。デフォルトフォントを使用")
+                c.setFont("Helvetica", font_size)
+
+            # テキスト幅を計算（ReportLabのstringWidth関数を使用）
+            text_width = c.stringWidth(document_text, self.font_name, font_size)
+
+            # 余白とパディング
+            margin = 10  # mm
+            margin_points = margin * mm  # ポイントに変換
+            padding = 4  # ポイント
+
+            # 回転に応じた座標計算（右上に配置）
+            if rotation == 0:
+                # 0度: 通常の右上
+                x = page_width - text_width - margin_points
+                y = page_height - margin_points - font_size
+                text_rotation = 0
+            elif rotation == 90:
+                # 90度回転: 左上が視覚的な右上になる
+                x = margin_points
+                y = page_height - margin_points - font_size
+                text_rotation = 0  # テキスト自体は回転させない
+            elif rotation == 180:
+                # 180度回転: 左下が視覚的な右上になる
+                x = margin_points + text_width
+                y = margin_points + font_size
+                text_rotation = 180
+            elif rotation == 270:
+                # 270度回転: 右下が視覚的な右上になる
+                x = page_width - margin_points
+                y = margin_points + font_size
+                text_rotation = 90
+            else:
+                # デフォルト（0度と同じ）
+                x = page_width - text_width - margin_points
+                y = page_height - margin_points - font_size
+                text_rotation = 0
+
+            # テキストを描画
+            c.saveState()
+            if text_rotation != 0:
+                c.translate(x, y)
+                c.rotate(text_rotation)
+                if text_rotation == 180:
+                    c.drawString(-text_width, 0, document_text)
+                elif text_rotation == 90:
+                    c.drawString(0, -text_width, document_text)
+                else:
+                    c.drawString(0, 0, document_text)
+            else:
+                c.drawString(x, y, document_text)
+            c.restoreState()
+
+            # 四角囲いを描画
+            text_height = font_size * 0.8
+
+            # 回転に応じた四角形の座標計算
+            if rotation == 0:
+                rect_x = x - padding
+                rect_y = y - padding
+                rect_width = text_width + (padding * 2)
+                rect_height = text_height + (padding * 2)
+            elif rotation == 90:
+                rect_x = x - padding
+                rect_y = y - padding
+                rect_width = text_width + (padding * 2)
+                rect_height = text_height + (padding * 2)
+            elif rotation == 180:
+                rect_x = x - text_width - padding
+                rect_y = y - text_height - padding
+                rect_width = text_width + (padding * 2)
+                rect_height = text_height + (padding * 2)
+            elif rotation == 270:
+                rect_x = x - text_height - padding
+                rect_y = y - text_width - padding
+                rect_width = text_height + (padding * 2)
+                rect_height = text_width + (padding * 2)
+            else:
+                rect_x = x - padding
+                rect_y = y - padding
+                rect_width = text_width + (padding * 2)
+                rect_height = text_height + (padding * 2)
+
+            # 四角形を描画（黒い枠線、塗りつぶしなし）
+            c.setStrokeColorRGB(0, 0, 0)  # 黒色
+            c.setLineWidth(1.5)  # 線の太さ
+            c.rect(rect_x, rect_y, rect_width, rect_height, fill=0, stroke=1)
+
+            # PDFを完成させる
+            c.showPage()
+            c.save()
+
+            # バイナリデータを取得
+            packet.seek(0)
+            return packet.getvalue()
+
+        except Exception as e:
+            logger.error(f"ReportLabオーバーレイ作成エラー: {e}")
+            return b""
+
+    def _get_japanese_font_file(self) -> Optional[str]:
+        """
+        日本語フォントファイルを取得
+
+        Returns:
+            Optional[str]: 使用可能な日本語フォントファイルのパス
+        """
+        # Windows標準の日本語フォントファイルのパス
+        font_paths = [
+            "C:/Windows/Fonts/msgothic.ttc",    # MSゴシック
+            "C:/Windows/Fonts/msmincho.ttc",    # MS明朝
+            "C:/Windows/Fonts/meiryo.ttc",      # メイリオ
+            "C:/Windows/Fonts/YuGothic.ttf",    # 游ゴシック
+            "C:/Windows/Fonts/NotoSansCJK-Regular.ttc",  # Noto Sans CJK
+        ]
+
+        for font_path in font_paths:
+            try:
+                if Path(font_path).exists():
+                    # フォントファイルが読み取り可能かテスト
+                    with open(font_path, 'rb') as f:
+                        f.read(100)  # 最初の100バイトを読んでテスト
+                    logger.info(f"日本語フォント見つかりました: {font_path}")
+                    return font_path
+            except Exception as e:
+                logger.info(f"フォントファイルテスト失敗: {font_path} - {e}")
+                continue
+
+        logger.warning("日本語フォントファイルが見つかりませんでした")
+        return None
+
+    def _draw_rectangle_around_text(self, page, x: float, y: float, text_width: float,
+                                   font_size: float, rotate_param: int) -> None:
+        """
+        テキスト周りに四角囲いを描画
+
+        Args:
+            page: PyMuPDFページオブジェクト
+            x: テキストX座標
+            y: テキストY座標
+            text_width: テキスト幅
+            font_size: フォントサイズ
+            rotate_param: 回転パラメータ
+        """
+        try:
+            # 余白設定
+            margin = 3  # 適切な余白
+
+            # テキストの実際の高さ（フォントサイズより少し小さい）
+            text_height = font_size * 0.75
+
+            # 四角形の座標計算（回転を考慮）
+            if rotate_param == 0:
+                # 通常（0度）
+                rect = fitz.Rect(x - margin, y - margin,
+                               x + text_width + margin, y + text_height + margin)
+            elif rotate_param == 90:
+                # 90度回転
+                rect = fitz.Rect(x - text_height - margin, y - margin,
+                               x + margin, y + text_width + margin)
+            elif rotate_param == 180:
+                # 180度回転
+                rect = fitz.Rect(x - text_width - margin, y - text_height - margin,
+                               x + margin, y + margin)
+            elif rotate_param == -90:
+                # -90度回転（270度PDFで使用）
+                rect = fitz.Rect(x - margin, y - text_width - margin,
+                               x + text_height + margin, y + margin)
+            else:
+                # デフォルト
+                rect = fitz.Rect(x - margin, y - margin,
+                               x + text_width + margin, y + text_height + margin)
+
+            # 四角形を描画（黒い線、塗りつぶしなし）
+            page.draw_rect(rect, color=(0, 0, 0), width=1)
+
+            logger.info(f"四角囲い描画完了: {rect}")
+
+        except Exception as e:
+            logger.error(f"四角囲い描画エラー: {e}")
+            # エラーが発生してもテキスト挿入は続行
