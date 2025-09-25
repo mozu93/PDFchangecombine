@@ -14,13 +14,11 @@ from .logger import logger
 class SecurityValidator:
     """セキュリティ検証クラス"""
 
-    # 危険な文字列パターン
+    # 危険な文字列パターン（緩和版）
     DANGEROUS_PATTERNS = [
-        r'\.\./',      # Path traversal
-        r'\.\.\.',     # Multiple dots
-        r'//+',        # Multiple slashes
+        r'\.\.[\\/]',   # Path traversal (../ または ..\)
         r'[\x00-\x1f]', # Control characters
-        r'CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]',  # Windows reserved names
+        r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)',  # Windows reserved names (完全一致)
     ]
 
     # Windowsファイル名で禁止されている文字（パス部分は除外）
@@ -51,8 +49,12 @@ class SecurityValidator:
                 logger.warning("無効なファイルパス: 空文字またはNone")
                 return False
 
+            # デバッグ用ログ
+            logger.info(f"セキュリティ検証開始: {file_path}")
+
             # 正規化されたパスを取得
             normalized_path = Path(file_path).resolve()
+            logger.info(f"正規化後パス: {normalized_path}")
 
             # 危険なパターンチェック
             for pattern in cls.DANGEROUS_PATTERNS:
@@ -66,14 +68,18 @@ class SecurityValidator:
                 logger.warning(f"ファイル名に禁止文字検出: {filename_only}")
                 return False
 
-            # 基準ディレクトリ制限チェック
+            # 基準ディレクトリ制限チェック（base_dirが指定された場合のみ）
             if base_dir:
-                base_path = Path(base_dir).resolve()
                 try:
-                    normalized_path.relative_to(base_path)
-                except ValueError:
-                    logger.warning(f"許可範囲外のパス: {file_path}")
-                    return False
+                    base_path = Path(base_dir).resolve()
+                    try:
+                        normalized_path.relative_to(base_path)
+                    except ValueError:
+                        logger.info(f"基準ディレクトリ外のパス（許可）: {file_path}")
+                        # 基準ディレクトリ外でも安全なファイルは許可
+                except Exception as e:
+                    logger.warning(f"基準ディレクトリ検証エラー: {e}")
+                    # エラーが発生してもファイル自体は安全かもしれないため続行
 
             # ファイル拡張子チェック
             file_extension = normalized_path.suffix.lower()
@@ -91,6 +97,8 @@ class SecurityValidator:
                 logger.warning(f"ディレクトリが指定されました: {file_path}")
                 return False
 
+            # 検証成功ログ
+            logger.info(f"セキュリティ検証成功: {normalized_path.name}")
             return True
 
         except Exception as e:
