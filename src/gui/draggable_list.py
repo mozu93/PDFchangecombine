@@ -126,7 +126,17 @@ class DraggableFileList(ctk.CTkScrollableFrame):
     """ドラッグアンドドロップ対応のファイルリスト"""
 
     def __init__(self, parent, **kwargs):
+        # 薄い水色の背景色を設定
+        if 'fg_color' not in kwargs:
+            kwargs['fg_color'] = ("#E6F7FF", "#E6F7FF")  # ライトモード/ダークモード共通: 薄い水色
         super().__init__(parent, **kwargs)
+
+        # 内部フレームとキャンバスの背景色も設定
+        self.configure(fg_color=("#E6F7FF", "#E6F7FF"))
+
+        # CTkScrollableFrameの内部構造にアクセスして背景色を設定
+        # after_idle で確実に初期化後に設定
+        self.after(1, self._set_background_colors)
 
         self.file_paths: List[str] = []
         self.items: Dict[str, DraggableListItem] = {}
@@ -140,6 +150,16 @@ class DraggableFileList(ctk.CTkScrollableFrame):
         # コールバック
         self.on_selection_change: Optional[Callable] = None
         self.on_order_change: Optional[Callable] = None
+
+    def _set_background_colors(self):
+        """内部キャンバスとフレームの背景色を設定"""
+        try:
+            if hasattr(self, '_parent_canvas'):
+                self._parent_canvas.configure(bg="#E6F7FF")
+            if hasattr(self, '_parent_frame'):
+                self._parent_frame.configure(fg_color="#E6F7FF")
+        except Exception as e:
+            pass  # エラーは無視
 
     def add_file(self, file_path: str):
         """ファイルを追加"""

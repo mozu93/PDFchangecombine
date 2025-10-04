@@ -5,6 +5,8 @@ Officeファイル変換モジュール
 
 import os
 from pathlib import Path
+from typing import List
+import time
 
 # Microsoft Office COM API用ライブラリ（Windows専用）
 # フォールバック機能は削除し、高品質なCOM APIのみを使用
@@ -18,7 +20,7 @@ class OfficeConverter:
     def __init__(self):
         logger.info("Officeコンバーター初期化完了 - Microsoft Office COM API専用")
     
-    def convert_to_pdf(self, input_path: str, output_path: str) -> bool:
+    def convert_to_pdf(self, input_path: str, output_path: str, split_sheets: bool = False) -> List[str]:
         """
         OfficeファイルのPDF変換メイン処理
         
@@ -27,7 +29,7 @@ class OfficeConverter:
             output_path: 出力PDFパス
             
         Returns:
-            bool: 変換成功時True
+            List[str]: 生成されたPDFファイルのパスのリスト
         """
         try:
             file_ext = Path(input_path).suffix.lower()
@@ -35,65 +37,68 @@ class OfficeConverter:
             if file_ext in ['.docx', '.doc']:
                 return self._convert_word_to_pdf(input_path, output_path)
             elif file_ext in ['.xlsx', '.xls']:
-                return self._convert_excel_to_pdf(input_path, output_path)
+                return self._convert_excel_to_pdf(input_path, output_path, split_sheets)
             elif file_ext in ['.pptx', '.ppt']:
                 return self._convert_powerpoint_to_pdf(input_path, output_path)
             else:
                 logger.error(f"未対応のOffice形式: {file_ext}")
-                return False
+                return []
         
         except Exception as e:
             logger.error(f"Office変換エラー: {input_path} - {str(e)}", exc_info=True)
-            return False
+            return []
     
-    def _convert_word_to_pdf(self, input_path: str, output_path: str) -> bool:
+    def _convert_word_to_pdf(self, input_path: str, output_path: str) -> List[str]:
         """Word文書のPDF変換（Microsoft Office COM APIのみ使用）"""
         try:
             # Microsoft Office COM APIでのみ変換を試行
-            if self._try_office_conversion(input_path, output_path):
-                return True
+            generated_files = self._try_office_conversion(input_path, output_path)
+            if generated_files:
+                return generated_files
             
             # COM APIが失敗した場合はエラー
             logger.error(f"Word変換失敗 - Microsoft Word COM API変換エラー: {input_path}")
-            return False
+            return []
             
         except Exception as e:
             logger.error(f"Word変換エラー: {input_path} - {str(e)}")
-            return False
+            return []
     
-    def _convert_excel_to_pdf(self, input_path: str, output_path: str) -> bool:
+    def _convert_excel_to_pdf(self, input_path: str, output_path: str, split_sheets: bool = False) -> List[str]:
         """Excel文書のPDF変換（Microsoft Office COM APIのみ使用）"""
         try:
             # Microsoft Office COM APIでのみ変換を試行
-            if self._try_office_conversion(input_path, output_path):
-                return True
+            generated_files = self._try_office_conversion(input_path, output_path, split_sheets)
+            if generated_files:
+                return generated_files
             
             # COM APIが失敗した場合はエラー
             logger.error(f"Excel変換失敗 - Microsoft Excel COM API変換エラー: {input_path}")
-            return False
+            return []
             
         except Exception as e:
             logger.error(f"Excel変換エラー: {input_path} - {str(e)}")
-            return False
+            return []
     
     
-    def _convert_powerpoint_to_pdf(self, input_path: str, output_path: str) -> bool:
+    def _convert_powerpoint_to_pdf(self, input_path: str, output_path: str) -> List[str]:
         """PowerPoint文書のPDF変換（Microsoft Office COM APIのみ使用）"""
         try:
             # Microsoft Office COM APIでのみ変換を試行
-            if self._try_office_conversion(input_path, output_path):
-                return True
+            generated_files = self._try_office_conversion(input_path, output_path)
+            if generated_files:
+                return generated_files
             
             # COM APIが失敗した場合はエラー
             logger.error(f"PowerPoint変換失敗 - Microsoft PowerPoint COM API変換エラー: {input_path}")
-            return False
+            return []
             
         except Exception as e:
             logger.error(f"PowerPoint変換エラー: {input_path} - {str(e)}")
-            return False
+            return []
     
     
-    def _try_office_conversion(self, input_path: str, output_path: str) -> bool:
+    def _try_office_conversion(self, input_path: str, output_path: str, split_sheets: bool = False) -> List[str]:
         """Microsoft Office変換の試行"""
         word_app = None
         excel_app = None
@@ -102,7 +107,7 @@ class OfficeConverter:
         try:
             # Windowsの場合のみMicrosoft Officeを使用
             if os.name != 'nt':
-                return False
+                return []
 
             import win32com.client
             from pywintypes import com_error
@@ -123,13 +128,13 @@ class OfficeConverter:
             if file_ext in ['.doc', '.docx']:
                 # Word変換 - 詳細なエラーハンドリング付き
                 try:
-                    # 既存のWordインスタンスを確認してから新しいインスタンスを作成
+                    # PyInstallerでの実行の場合はDispatchExを使用
                     try:
-                        word_app = win32com.client.GetActiveObject("Word.Application")
-                        logger.info("既存のWordインスタンスを使用")
+                        word_app = win32com.client.DispatchEx("Word.Application")
+                        logger.info("新しいWordインスタンスを作成 (DispatchEx)")
                     except:
                         word_app = win32com.client.Dispatch("Word.Application")
-                        logger.info("新しいWordインスタンスを作成")
+                        logger.info("新しいWordインスタンスを作成 (Dispatch)")
                     
                     # Visibleプロパティ設定をtry-catchで保護
                     try:
@@ -146,7 +151,7 @@ class OfficeConverter:
                     # ファイル存在確認
                     if not os.path.exists(input_abs_path):
                         logger.error(f"ファイルが存在しません: {input_abs_path}")
-                        return False
+                        return []
                     
                     # ドキュメントを開く（段階的フォールバック）
                     doc = None
@@ -167,11 +172,11 @@ class OfficeConverter:
                             doc = word_app.Documents.Open(input_abs_path)
                         except Exception as fallback_error:
                             logger.error(f"フォールバック処理も失敗: {fallback_error}")
-                            return False
+                            return []
                     
                     if doc is None:
                         logger.error("ドキュメントを開くことができませんでした")
-                        return False
+                        return []
                     
                     # PDF品質設定
                     # ExportFormat:17=PDF, OptimizeFor:0=印刷品質, BitmapMissingFonts:True
@@ -184,7 +189,7 @@ class OfficeConverter:
                     
                     doc.Close()
                     logger.info(f"Microsoft Word変換成功: {Path(input_path).name}")
-                    return True
+                    return [output_abs_path]
                     
                 except com_error as e:
                     error_code = getattr(e, 'hresult', 'Unknown')
@@ -192,67 +197,97 @@ class OfficeConverter:
                     logger.error(f"Word COM エラー: {Path(input_path).name}")
                     logger.error(f"  エラーコード: {error_code}")
                     logger.error(f"  エラー詳細: {error_desc}")
-                    return False
+                    return []
                 except Exception as e:
                     logger.error(f"Word変換で予期しないエラー: {Path(input_path).name} - {type(e).__name__}: {e}")
-                    return False
+                    return []
             
             elif file_ext in ['.xls', '.xlsx']:
                 # Excel変換 - 詳細なエラーハンドリング付き
                 try:
-                    # 既存のExcelインスタンスを確認してから新しいインスタンスを作成
+                    # PyInstallerでの実行の場合はDispatchExを使用
                     try:
-                        excel_app = win32com.client.GetActiveObject("Excel.Application")
-                        logger.info("既存のExcelインスタンスを使用")
+                        excel_app = win32com.client.DispatchEx("Excel.Application")
+                        logger.info("新しいExcelインスタンスを作成 (DispatchEx)")
                     except:
                         excel_app = win32com.client.Dispatch("Excel.Application")
-                        logger.info("新しいExcelインスタンスを作成")
-                    
+                        logger.info("新しいExcelインスタンスを作成 (Dispatch)")
+
                     # Visibleプロパティ設定をtry-catchで保護
                     try:
                         excel_app.Visible = False
                     except:
                         logger.warning("Excel.Visibleプロパティの設定をスキップ")
-                    
-                    # DisplayAlerts設定をtry-catchで保護
+
+                    # DisplayAlerts設定でダイアログを無効化
                     try:
                         excel_app.DisplayAlerts = False
                     except:
                         logger.warning("Excel.DisplayAlertsプロパティの設定をスキップ")
-                    
-                    # ファイル存在確認
+
                     if not os.path.exists(input_abs_path):
                         logger.error(f"ファイルが存在しません: {input_abs_path}")
-                        return False
-                    
+                        return []
+
                     # ワークブックを開く
                     logger.info(f"Excelファイルを開いています: {Path(input_path).name}")
                     workbook = excel_app.Workbooks.Open(input_abs_path, ReadOnly=True)
                     
-                    # 最初のシートをアクティブにして、そのシートのみをPDF化
-                    if workbook.Worksheets.Count > 0:
-                        first_sheet = workbook.Worksheets(1)  # 1番目のシート
-                        first_sheet.Activate()
-                        logger.info(f"最初のシートをPDF化: {first_sheet.Name}")
-                        
-                        # 最初のシートのみをPDFでエクスポート
-                        first_sheet.ExportAsFixedFormat(Type=0,  # xlTypePDF
-                                                       Filename=output_abs_path,
-                                                       Quality=0,  # xlQualityStandard
-                                                       IgnorePrintAreas=False,
-                                                       OpenAfterPublish=False)
+                    generated_files = []
+                    # シートごとにPDF化するオプションを確認
+                    if split_sheets:
+                        logger.info("Excelの全シートを個別のPDFとして出力します。")
+
+                        # 全てのシートをループ
+                        for sheet in workbook.Worksheets:
+                            sheet.Activate()
+
+                            # 出力ファイル名を生成 (元ファイル名_シート名.pdf)
+                            output_sheet_path = f"{output_abs_path.rsplit('.', 1)[0]}_{sheet.Name}.pdf"
+
+                            logger.info(f"シートをPDF化: {sheet.Name} -> {Path(output_sheet_path).name}")
+
+                            # シートをPDFとしてエクスポート
+                            sheet.ExportAsFixedFormat(Type=0,  # xlTypePDF
+                                                      Filename=output_sheet_path,
+                                                      Quality=0,  # xlQualityStandard
+                                                      IgnorePrintAreas=False,
+                                                      OpenAfterPublish=False)
+                            generated_files.append(output_sheet_path)
                     else:
-                        logger.warning("シートが存在しないため、ワークブック全体をPDF化")
-                        # フォールバック: ワークブック全体をPDF化
+                        # デフォルト: アクティブシート（開いた時のシート）のみをPDF化
+                        logger.info("Excelのアクティブシート（開いた時のシート）のみをPDF化します。")
+
+                        # 現在アクティブなシートを取得
+                        active_sheet = workbook.ActiveSheet
+                        logger.info(f"アクティブシート: {active_sheet.Name}")
+
+                        # 他のシートを一時的に非表示にする
+                        original_visibility = {}
+                        for sheet in workbook.Worksheets:
+                            original_visibility[sheet.Name] = sheet.Visible
+                            if sheet.Name != active_sheet.Name:
+                                sheet.Visible = False  # xlSheetHidden
+
+                        # アクティブシートのみPDF化
                         workbook.ExportAsFixedFormat(Type=0,
                                                    Filename=output_abs_path,
                                                    Quality=0,
                                                    IgnorePrintAreas=False,
                                                    OpenAfterPublish=False)
+
+                        # シートの表示状態を復元
+                        for sheet_name, visibility in original_visibility.items():
+                            try:
+                                workbook.Worksheets(sheet_name).Visible = visibility
+                            except:
+                                pass
+
+                        generated_files.append(output_abs_path)
                     
                     workbook.Close()
                     logger.info(f"Microsoft Excel変換成功: {Path(input_path).name}")
-                    return True
+                    return generated_files
                     
                 except com_error as e:
                     error_code = getattr(e, 'hresult', 'Unknown')
@@ -260,20 +295,26 @@ class OfficeConverter:
                     logger.error(f"Excel COM エラー: {Path(input_path).name}")
                     logger.error(f"  エラーコード: {error_code}")
                     logger.error(f"  エラー詳細: {error_desc}")
-                    return False
+                    return []
                 except Exception as e:
                     logger.error(f"Excel変換で予期しないエラー: {Path(input_path).name} - {type(e).__name__}: {e}")
-                    return False
+                    return []
             
             elif file_ext in ['.ppt', '.pptx']:
                 # PowerPoint変換 - 詳細なエラーハンドリング付き
                 try:
-                    powerpoint_app = win32com.client.Dispatch("PowerPoint.Application")
+                    # PyInstallerでの実行の場合はDispatchExを使用
+                    try:
+                        powerpoint_app = win32com.client.DispatchEx("PowerPoint.Application")
+                        logger.info("新しいPowerPointインスタンスを作成 (DispatchEx)")
+                    except:
+                        powerpoint_app = win32com.client.Dispatch("PowerPoint.Application")
+                        logger.info("新しいPowerPointインスタンスを作成 (Dispatch)")
                     
                     # ファイル存在確認
                     if not os.path.exists(input_abs_path):
                         logger.error(f"ファイルが存在しません: {input_abs_path}")
-                        return False
+                        return []
                     
                     # プレゼンテーションを開く
                     logger.info(f"PowerPointファイルを開いています: {Path(input_path).name}")
@@ -289,7 +330,7 @@ class OfficeConverter:
                     
                     presentation.Close()
                     logger.info(f"Microsoft PowerPoint変換成功: {Path(input_path).name}")
-                    return True
+                    return [output_abs_path]
                     
                 except com_error as e:
                     error_code = getattr(e, 'hresult', 'Unknown')
@@ -297,16 +338,16 @@ class OfficeConverter:
                     logger.error(f"PowerPoint COM エラー: {Path(input_path).name}")
                     logger.error(f"  エラーコード: {error_code}")
                     logger.error(f"  エラー詳細: {error_desc}")
-                    return False
+                    return []
                 except Exception as e:
                     logger.error(f"PowerPoint変換で予期しないエラー: {Path(input_path).name} - {type(e).__name__}: {e}")
-                    return False
+                    return []
             
-            return False
+            return []
             
         except ImportError:
             logger.error("pywin32が未インストールです。Microsoft Office COM API変換には pywin32 が必要です。")
-            return False
+            return []
         except Exception as e:
             error_message = str(e)
             if "Microsoft Word" in error_message or "Word.Application" in error_message:
@@ -320,7 +361,7 @@ class OfficeConverter:
                 logger.error("Microsoft PowerPointがインストールされ、正しく動作していることを確認してください。")
             else:
                 logger.error(f"Microsoft Office COM API変換エラー: {error_message}")
-            return False
+            return []
         finally:
             # COM オブジェクトの確実なクリーンアップ
             try:

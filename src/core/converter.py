@@ -20,10 +20,10 @@ from .image_converter import ImageConverter
 class ConversionResult:
     """変換結果を保持するクラス"""
     
-    def __init__(self, source_path: str, target_path: str = "", 
+    def __init__(self, source_path: str, target_paths: List[str] = None, 
                  success: bool = False, error_message: str = ""):
         self.source_path = source_path
-        self.target_path = target_path
+        self.target_paths = target_paths if target_paths is not None else []
         self.success = success
         self.error_message = error_message
         self.processing_time = 0.0
@@ -41,12 +41,13 @@ class PDFConverter:
         
         logger.info("PDFコンバーター初期化完了")
     
-    async def convert_files_async(self, file_paths: List[str]) -> List[ConversionResult]:
+    async def convert_files_async(self, file_paths: List[str], split_sheets: bool = False) -> List[ConversionResult]:
         """
         複数ファイルの非同期変換（要件定義書 F-103）
         
         Args:
             file_paths: 変換対象ファイルパスのリスト
+            split_sheets: Excelシートを分割するかどうか
             
         Returns:
             List[ConversionResult]: 変換結果のリスト
@@ -63,7 +64,7 @@ class PDFConverter:
         # 非同期タスクを作成
         tasks = []
         for file_path in file_paths:
-            task = self._convert_single_file_with_semaphore(semaphore, file_path)
+            task = self._convert_single_file_with_semaphore(semaphore, file_path, split_sheets)
             tasks.append(task)
         
         # 全てのタスクを実行
@@ -98,13 +99,13 @@ class PDFConverter:
         return final_results
     
     async def _convert_single_file_with_semaphore(self, semaphore: asyncio.Semaphore, 
-                                                 file_path: str) -> ConversionResult:
+                                                 file_path: str, split_sheets: bool = False) -> ConversionResult:
         """セマフォ付き単一ファイル変換"""
         async with semaphore:
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(self.executor, self._convert_single_file, file_path)
+            return await loop.run_in_executor(self.executor, self._convert_single_file, file_path, split_sheets)
     
-    def _convert_single_file(self, file_path: str) -> ConversionResult:
+    def _convert_single_file(self, file_path: str, split_sheets: bool = False) -> ConversionResult:
         """
         単一ファイルの変換処理（要件定義書 F-103）
         
@@ -125,30 +126,36 @@ class PDFConverter:
             
             # 出力ファイルパス生成（要件定義書 F-104）
             output_path = OutputManager.get_output_file_path(file_path)
-            result.target_path = output_path
             
             # ファイル種別に応じて変換実行
             file_type = FileValidator.get_file_type(file_path)
             
+            generated_files = []
             if file_type in ['word', 'excel', 'powerpoint']:
-                success = self.office_converter.convert_to_pdf(file_path, output_path)
+                generated_files = self.office_converter.convert_to_pdf(file_path, output_path, split_sheets)
             elif file_type == 'image':
-                success = self.image_converter.convert_to_pdf(file_path, output_path)
+                if self.image_converter.convert_to_pdf(file_path, output_path):
+                    generated_files = [output_path]
             elif file_type == 'pdf':
                 # PDFファイルは変換済フォルダにコピー
-                success = self._copy_pdf_file(file_path, output_path)
+                if self._copy_pdf_file(file_path, output_path):
+                    generated_files = [output_path]
             else:
                 result.error_message = f"未対応のファイル種別: {file_type}"
                 return result
 
+            result.target_paths = generated_files
+            success = bool(generated_files)
+
             if success and file_type != 'pdf':
-                try:
-                    logger.info(f"PDF修復処理開始: {output_path}")
-                    with fitz.open(output_path) as doc:
-                        doc.save(output_path, garbage=4, deflate=True, clean=True)
-                    logger.info(f"PDF修復処理完了: {output_path}")
-                except Exception as e:
-                    logger.warning(f"PDF修復処理に失敗: {output_path} - {e}")
+                for gen_file in generated_files:
+                    try:
+                        logger.info(f"PDF修復処理開始: {gen_file}")
+                        with fitz.open(gen_file) as doc:
+                            doc.save(gen_file, garbage=4, deflate=True, clean=True)
+                        logger.info(f"PDF修復処理完了: {gen_file}")
+                    except Exception as e:
+                        logger.warning(f"PDF修復処理に失敗: {gen_file} - {e}")
             
             result.success = success
             
@@ -206,7 +213,7 @@ class PDFConverter:
             'success_rate': len(successful_files) / total_files * 100 if total_files > 0 else 0,
             'total_processing_time': total_time,
             'average_processing_time': avg_time,
-            'successful_files': [r.target_path for r in successful_files],
+            'successful_files': [path for r in successful_files for path in r.target_paths],
             'failed_files': [(r.source_path, r.error_message) for r in failed_files]
         }
     

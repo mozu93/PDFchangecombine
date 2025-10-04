@@ -11,6 +11,9 @@ import tkinter.messagebox as messagebox
 import asyncio
 import threading
 from pathlib import Path
+import sys
+import subprocess
+import os
 
 try:
     from tkinterdnd2 import TkinterDnD
@@ -70,6 +73,9 @@ class UnifiedWindow:
         self.combination_files: List[str] = []
         self.combination_checkboxes: Dict[str, ctk.CTkCheckBox] = {}
         self.document_number_files: List[str] = []  # 資料NO挿入用ファイル（旧式、互換性のため残す）
+
+        # オプション管理
+        self.split_excel_sheets_var = ctk.BooleanVar(value=False)
 
         # チェックボックス管理
         self.file_checkboxes = {}  # 変換用ファイルチェックボックス
@@ -165,16 +171,7 @@ class UnifiedWindow:
         )
         self.conversion_select_btn.pack(side="left", padx=8, pady=10)
         
-        # 変換実行ボタン
-        self.conversion_convert_btn = ctk.CTkButton(
-            conversion_btn_frame,
-            text="🔄 PDF変換開始",
-            command=self._start_conversion,
-            height=35,
-            width=130,  # 縦長ウィンドウに合わせて幅を調整
-            state="disabled"
-        )
-        self.conversion_convert_btn.pack(side="left", padx=(8, 0), pady=10)
+
         
         # クリアボタン
         self.conversion_clear_btn = ctk.CTkButton(
@@ -200,26 +197,54 @@ class UnifiedWindow:
         self.file_list_frame = ctk.CTkScrollableFrame(
             self.conversion_tab,
             height=200,  # 450×700ウィンドウに最適な高さ
-            label_text="📁 変換対象ファイルリスト"
+            label_text="📁 変換対象ファイルリスト",
+            fg_color=("#E6F7FF", "#E6F7FF")
         )
         self.file_list_frame.pack(fill="both", expand=True, padx=15, pady=8)
+
+        # 内部キャンバスの背景色も設定
+        self.file_list_frame.after(1, self._set_conversion_frame_colors)
+
+        # Excelシート分割オプション
+        self.excel_options_frame = ctk.CTkFrame(self.conversion_tab)
+        self.excel_options_frame.pack(fill="x", padx=15, pady=(0, 5))
+
+        self.split_excel_sheets_checkbox = ctk.CTkCheckBox(
+            self.excel_options_frame,
+            text="Excelのシートを個別のPDFに分割する",
+            variable=self.split_excel_sheets_var,
+            font=ctk.CTkFont(size=12)
+        )
+        self.split_excel_sheets_checkbox.pack(side="left", padx=8, pady=5)
         
         # ファイルチェックボックスの管理
         self.file_checkboxes = {}  # {file_path: checkbox_widget}
         
         # 初期表示メッセージ
-        button_color = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
         self.initial_message_label = ctk.CTkLabel(
             self.file_list_frame,
-            text="📁 ファイルをここにドラッグ&ドロップしてください\n\n対応ファイル:\n• Word: .docx, .doc\n• Excel: .xlsx, .xls (最初のシートのみPDF化)\n• PowerPoint: .pptx, .ppt\n• 画像: .jpg, .jpeg, .png, .bmp, .gif, .tiff\n• PDF: .pdf (変換済フォルダにコピー)\n\n複数ファイルやフォルダもドロップできます",
+            text="📁 ファイルをここにドラッグ&ドロップしてください\n\n対応ファイル:\n• Word: .docx, .doc\n• Excel: .xlsx, .xls (全シートを1つのPDFに変換)\n• PowerPoint: .pptx, .ppt\n• 画像: .jpg, .jpeg, .png, .bmp, .gif, .tiff\n• PDF: .pdf (変換済フォルダにコピー)\n\n複数ファイルやフォルダもドロップできます",
             font=ctk.CTkFont(size=12),
             justify="left",
-            fg_color=button_color,
+            fg_color="#E6F7FF",
             corner_radius=8
         )
         self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
         
         
+
+
+
+        # 変換実行ボタン
+        self.conversion_convert_btn = ctk.CTkButton(
+            self.conversion_tab,
+            text="🔄 PDF変換開始",
+            command=self._start_conversion,
+            height=40,
+            state="disabled"
+        )
+        self.conversion_convert_btn.pack(pady=(10, 10))
+
         # プログレスバー
         self.conversion_progress = ctk.CTkProgressBar(self.conversion_tab)
         self.conversion_progress.pack(fill="x", padx=15, pady=(0, 8))
@@ -316,13 +341,12 @@ class UnifiedWindow:
         self.combination_draggable_list.on_order_change = self._on_combination_order_change
 
         # 初期メッセージ（空の時に表示）
-        button_color = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
         self.combination_list_msg = ctk.CTkLabel(
             self.combination_draggable_list,
             text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・ドラッグで順序変更、↑↓ボタンでも調整可能\n\n\n\n\n",
             font=ctk.CTkFont(size=12),
             justify="left",
-            fg_color=button_color,
+            fg_color="#E6F7FF",
             corner_radius=8
         )
         self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
@@ -528,13 +552,12 @@ class UnifiedWindow:
         self.document_draggable_list.on_order_change = self._on_document_order_change
 
         # 初期メッセージ（空の時に表示）
-        button_color = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
         self.document_list_msg = ctk.CTkLabel(
             self.document_draggable_list,
             text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・フォント: Meiryo、四角囲い文字で表示\n・全ての回転角度（0°, 90°, 180°, 270°）に対応\n・ドラッグで順序変更、↑↓ボタンでも調整可能\n\n\n",
             font=ctk.CTkFont(size=12),
             justify="left",
-            fg_color=button_color,
+            fg_color="#E6F7FF",
             corner_radius=8
         )
         self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
@@ -563,6 +586,20 @@ class UnifiedWindow:
         self.document_status.pack(pady=(0, 10))
 
         # 入力フィールドの変更監視は新しいメソッドで処理
+
+    def _open_folder(self, folder_path: str):
+        """指定されたフォルダをエクスプローラーで開く"""
+        import os
+        try:
+            if sys.platform == "win32":
+                os.startfile(folder_path)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", folder_path])
+            else:
+                subprocess.Popen(["xdg-open", folder_path])
+        except Exception as e:
+            logger.error(f"フォルダを開けませんでした: {folder_path} - {e}")
+            messagebox.showwarning("エラー", f"フォルダを開けませんでした。\n{folder_path}")
 
     def _toggle_page_number_options(self) -> None:
         """ページ番号オプションの有効/無効を切り替える"""
@@ -719,8 +756,8 @@ class UnifiedWindow:
         """結合リストの選択変更時のコールバック"""
         # ボタンの有効/無効を更新
         has_selection = len(selected_files) > 0
-        self.combination_up_btn.configure(state="normal" if has_selection else "disabled")
-        self.combination_down_btn.configure(state="normal" if has_selection else "disabled")
+        self.combination_move_up_btn.configure(state="normal" if has_selection else "disabled")
+        self.combination_move_down_btn.configure(state="normal" if has_selection else "disabled")
         self.combination_delete_btn.configure(state="normal" if has_selection else "disabled")
 
         # ステータス更新
@@ -801,8 +838,8 @@ class UnifiedWindow:
         """ドラッグリストの選択変更時のコールバック"""
         # ボタンの有効/無効を更新
         has_selection = len(selected_files) > 0
-        self.document_up_btn.configure(state="normal" if has_selection else "disabled")
-        self.document_down_btn.configure(state="normal" if has_selection else "disabled")
+        self.document_move_up_btn.configure(state="normal" if has_selection else "disabled")
+        self.document_move_down_btn.configure(state="normal" if has_selection else "disabled")
         self.document_delete_btn.configure(state="normal" if has_selection else "disabled")
 
         # ステータス更新
@@ -1148,21 +1185,23 @@ class UnifiedWindow:
         self.document_progress.set(1.0)
 
         if result.success:
+            message = (f"資料NO挿入が完了しました！\n\n"
+                       f"• 処理ファイル数: {len(result.processed_files)}個\n"
+                       f"• 総ページ数: {result.total_pages}ページ\n"
+                       f"• 元ファイルは「元ファイル」フォルダにバックアップされました\n"
+                       f"• 処理時間: {result.processing_time:.1f}秒\n\n"
+                       f"各ファイルに資料NOが正しく挿入されました。")
             self.document_status.configure(
                 text=f"資料NO挿入完了: {result.total_pages}ページ ({len(result.processed_files)}ファイル)"
             )
-            # 成功メッセージを表示
-            messagebox.showinfo(
-                "資料NO挿入完了",
-                f"資料NO挿入が完了しました！\n\n"
-                f"• 処理ファイル数: {len(result.processed_files)}個\n"
-                f"• 総ページ数: {result.total_pages}ページ\n"
-                f"• 元ファイルは「元ファイル」フォルダにバックアップされました\n"
-                f"• 処理時間: {result.processing_time:.1f}秒\n\n"
-                f"各ファイルに資料NOが正しく挿入されました。"
-            )
+            self._show_and_open_results("資料NO挿入完了", message, result.processed_files)
         else:
+            message = f"資料NO挿入に失敗しました。\n\nエラー: {result.error_message}"
             self.document_status.configure(text=f"資料NO挿入失敗: {result.error_message}")
+            messagebox.showerror("資料NO挿入失敗", message)
+
+        # ファイルリストをクリア
+        self._clear_document_number_files()
 
         # UI有効化
         self.document_execute_btn.configure(state="normal")
@@ -1323,7 +1362,7 @@ class UnifiedWindow:
         except Exception as e:
             logger.error(f"チェックボックス更新中にエラーが発生: {str(e)}")
     
-    def _clear_files(self) -> None:
+    def _clear_files(self, force: bool = False) -> None:
         """変換ファイルクリア（選択削除機能付き）"""
         try:
             # チェックボックスが存在する場合の選択削除機能
@@ -1345,9 +1384,8 @@ class UnifiedWindow:
                 else:
                     # 全ファイルクリア（確認ダイアログ付き）
                     if self.conversion_files:
-                        result = self._show_confirmation_dialog("全ファイルクリア", 
-                            f"全{len(self.conversion_files)}件のファイルをクリアしますか？")
-                        if result:
+                        if force or self._show_confirmation_dialog("全ファイルクリア", 
+                            f"全{len(self.conversion_files)}件のファイルをクリアしますか？"):
                             self.conversion_files.clear()
                             if hasattr(self, 'file_checkboxes'):
                                 for checkbox in self.file_checkboxes.values():
@@ -1404,7 +1442,8 @@ class UnifiedWindow:
                 self.root.after(0, lambda p=progress, s=status_text: self._update_conversion_progress(p, s))
                 
                 # 単一ファイル変換（順次処理）
-                result = self.pdf_converter._convert_single_file(file_path)
+                split_sheets = self.split_excel_sheets_var.get()
+                result = self.pdf_converter._convert_single_file(file_path, split_sheets)
                 results.append(result)
                 
                 # 完了時の進捗更新
@@ -1433,6 +1472,23 @@ class UnifiedWindow:
         self.conversion_status.configure(text=status)
         self.root.update_idletasks()  # UI即座更新
     
+    def _show_and_open_results(self, title: str, message: str, output_paths: List[str]):
+        """処理完了メッセージとフォルダ表示"""
+        messagebox.showinfo(title, message)
+        if output_paths:
+            folder_to_open = str(Path(output_paths[0]).parent)
+            self._open_folder(folder_to_open)
+
+    def _set_conversion_frame_colors(self):
+        """変換タブのフレーム内部キャンバスの背景色を設定"""
+        try:
+            if hasattr(self.file_list_frame, '_parent_canvas'):
+                self.file_list_frame._parent_canvas.configure(bg="#E6F7FF")
+            if hasattr(self.file_list_frame, '_parent_frame'):
+                self.file_list_frame._parent_frame.configure(fg_color="#E6F7FF")
+        except Exception as e:
+            pass  # エラーは無視
+
     def _on_conversion_complete(self, results) -> None:
         """変換完了処理"""
         successful = [r for r in results if r.success]
@@ -1441,22 +1497,35 @@ class UnifiedWindow:
         self.conversion_progress.set(1.0)
         
         if successful:
-            message = f"変換完了: 成功 {len(successful)}個"
-            if failed:
-                message += f", 失敗 {len(failed)}個"
+            message = f"変換が完了しました。\n\n成功: {len(successful)}件\n失敗: {len(failed)}件"
+            self.conversion_status.configure(text=f"変換完了: 成功 {len(successful)}個, 失敗 {len(failed)}個")
             
-            self.conversion_status.configure(text=message)
+            all_successful_paths = [path for r in successful for path in r.target_paths]
             
-            # 結合確認ダイアログ（2つ以上成功した場合）
-            if len(successful) >= 2:
-                self._show_combination_offer([r.target_path for r in successful])
+            def open_folder_callback():
+                if all_successful_paths:
+                    self._open_folder(str(Path(all_successful_paths[0]).parent))
+
+            # 結合提案ダイアログ
+            if len(all_successful_paths) >= 2:
+                self._show_combination_offer(all_successful_paths, on_no_callback=open_folder_callback)
+            else:
+                open_folder_callback()
+
+            messagebox.showinfo("変換完了", message)
+
         else:
+            message = f"変換に失敗しました。\n\n失敗: {len(failed)}件"
             self.conversion_status.configure(text=f"変換失敗: {len(failed)}個のファイルで問題が発生")
+            messagebox.showerror("変換失敗", message)
+        
+        # ファイルリストをクリア
+        self._clear_files(force=True)
         
         # UI有効化
         self.conversion_convert_btn.configure(state="normal")
     
-    def _show_combination_offer(self, pdf_files: List[str]) -> None:
+    def _show_combination_offer(self, pdf_files: List[str], on_no_callback=None) -> None:
         """結合提案ダイアログ"""
         dialog = ctk.CTkToplevel(self.root)
         dialog.title("PDF結合")
@@ -1490,6 +1559,8 @@ class UnifiedWindow:
         
         def on_no():
             dialog.destroy()
+            if on_no_callback:
+                on_no_callback()
         
         yes_btn = ctk.CTkButton(btn_frame, text="はい", command=on_yes, width=80)
         yes_btn.pack(side="left", padx=10)
@@ -1558,20 +1629,22 @@ class UnifiedWindow:
         self.combination_progress.set(1.0)
 
         if result.success:
+            message = (f"PDF結合が完了しました！\n\n"
+                       f"• 結合ファイル数: {len(result.processed_files)}個\n"
+                       f"• 総ページ数: {result.total_pages}ページ\n"
+                       f"• 出力ファイル: {Path(result.output_path).name}\n"
+                       f"• 処理時間: {result.processing_time:.1f}秒")
             self.combination_status.configure(
                 text=f"結合完了: {result.total_pages}ページ ({len(result.processed_files)}ファイル)"
             )
-            # 成功メッセージを表示
-            messagebox.showinfo(
-                "PDF結合完了",
-                f"PDF結合が完了しました！\n\n"
-                f"• 結合ファイル数: {len(result.processed_files)}個\n"
-                f"• 総ページ数: {result.total_pages}ページ\n"
-                f"• 出力ファイル: {Path(result.output_path).name}\n"
-                f"• 処理時間: {result.processing_time:.1f}秒"
-            )
+            self._show_and_open_results("PDF結合完了", message, [result.output_path])
         else:
+            message = f"結合に失敗しました。\n\nエラー: {result.error_message}"
             self.combination_status.configure(text=f"結合失敗: {result.error_message}")
+            messagebox.showerror("結合失敗", message)
+
+        # ファイルリストをクリア
+        self._clear_combination_files()
 
         # UI有効化
         self.combination_combine_btn.configure(state="normal")
