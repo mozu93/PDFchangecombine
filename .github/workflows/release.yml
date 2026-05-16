@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install `
+            pyinstaller `
+            customtkinter `
+            tkinterdnd2 `
+            Pillow `
+            reportlab `
+            PyMuPDF `
+            python-docx `
+            openpyxl `
+            xlrd `
+            python-pptx `
+            pywin32 `
+            packaging
+
+      - name: Build executable
+        run: pyinstaller PDFchangecombine.spec
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Create installer output directory
+        run: New-Item -ItemType Directory -Force dist\installer
+
+      - name: Build installer
+        run: iscc installer\setup.iss
+
+      - name: Get tag name
+        id: tag
+        shell: bash
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        run: |
+          gh release create ${{ steps.tag.outputs.TAG }} `
+            dist\installer\PDFConverter-setup.exe `
+            --title "PDF変換・結合ツール ${{ steps.tag.outputs.TAG }}" `
+            --notes "## PDF変換・結合ツール ${{ steps.tag.outputs.TAG }}
+
+          インストーラー（`PDFConverter-setup.exe`）をダウンロードして実行してください。
+
+          ### 変更内容
+          - リリースノートは [CHANGELOG](https://github.com/mozu93/PDFchangecombine) を参照してください。"
+        env:
+          GH_TOKEN: ${{ github.token }}

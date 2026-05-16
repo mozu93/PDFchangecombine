@@ -403,7 +403,8 @@ class PDFCombiner:
         return new_list
 
     def add_document_numbers(self, pdf_paths: List[str], output_path: str,
-                           document_number: str,
+                           document_number: str, document_prefix: str = "資料",
+                           rename_file: bool = False,
                            progress_callback: Optional[callable] = None) -> CombineResult:
         """
         PDFファイルに資料NO挿入（各ファイル個別処理・元ファイル同名保存）
@@ -445,16 +446,16 @@ class PDFCombiner:
                         progress_callback(f"処理中: {Path(pdf_path).name}", progress)
 
                     # 元ファイルのバックアップと資料NO挿入
-                    success = self._process_single_pdf_with_backup(pdf_path, document_number)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file)
 
-                    if success:
-                        processed_files.append(pdf_path)
+                    if new_path:
+                        processed_files.append(new_path)
 
                         # ページ数をカウント
-                        with fitz.open(pdf_path) as doc:
+                        with fitz.open(new_path) as doc:
                             total_pages += len(doc)
 
-                        logger.info(f"資料NO挿入完了: {Path(pdf_path).name}")
+                        logger.info(f"資料NO挿入完了: {Path(new_path).name}")
                     else:
                         logger.error(f"資料NO挿入失敗: {Path(pdf_path).name}")
 
@@ -491,6 +492,7 @@ class PDFCombiner:
     def add_sequential_document_numbers(self, pdf_paths: List[str], output_dir: str = "",
                                       numbering_type: str = "basic", start_number: int = 1,
                                       prefix_number: str = "1", document_prefix: str = "資料",
+                                      rename_file: bool = False,
                                       progress_callback: Optional[callable] = None) -> CombineResult:
         """
         複数PDFファイルに連番で資料NO挿入
@@ -572,16 +574,16 @@ class PDFCombiner:
                     logger.info(f"ファイル処理開始: {Path(pdf_path).name} → {document_number}")
 
                     # 資料NO挿入実行
-                    success = self._process_single_pdf_with_backup(pdf_path, document_number)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file)
 
-                    if success:
-                        processed_files.append(pdf_path)
+                    if new_path:
+                        processed_files.append(new_path)
 
                         # ページ数をカウント
-                        with fitz.open(pdf_path) as doc:
+                        with fitz.open(new_path) as doc:
                             total_pages += len(doc)
 
-                        logger.info(f"資料NO挿入完了: {Path(pdf_path).name} → {document_number}")
+                        logger.info(f"資料NO挿入完了: {Path(new_path).name} → {document_number}")
                     else:
                         failed_files.append((pdf_path, f"処理失敗"))
                         logger.error(f"資料NO挿入失敗: {Path(pdf_path).name}")
@@ -647,7 +649,11 @@ class PDFCombiner:
         Returns:
             str: 生成された文書番号
         """
-        if numbering_type == "basic":
+        if numbering_type == "none":
+            # 番号なし: 「資料」「参考」のみ
+            return ""
+
+        elif numbering_type == "basic":
             # 基本連番: 資料1, 資料2, 資料3...
             number = index + 1
             return f"{number}"
@@ -655,7 +661,7 @@ class PDFCombiner:
         elif numbering_type == "start_at":
             # 任意スタート: 資料3, 資料4, 資料5...
             number = start_number + index
-            return f"{number}"
+            return f"{number}" if number != 0 else ""
 
         elif numbering_type == "hyphen":
             # ハイフン付き: 資料1-1, 資料1-2, 資料1-3...
@@ -667,7 +673,7 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str) -> bool:
+    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False) -> bool:
         """
         単一PDFファイルに資料NO挿入（元ファイルバックアップ付き）
 
@@ -699,7 +705,7 @@ class PDFCombiner:
 
             # PDFを開いて資料NO挿入（1ページ目のみ、フリーズ対策）
             with fitz.open(pdf_path) as doc:
-                document_text = f"資料{document_number}"
+                document_text = f"{document_prefix}{document_number}"
 
                 # 1ページ目のみ処理
                 if len(doc) > 0:
@@ -849,12 +855,37 @@ class PDFCombiner:
             import shutil
             shutil.move(temp_path, pdf_path)
 
+            # ファイル名の先頭に資料番号を付加（オプション）
+            if rename_file:
+                fw_number = self._to_fullwidth_number(document_number)
+                label = f"【{document_prefix}{fw_number}】"
+                new_name = label + pdf_path_obj.name
+                new_path = pdf_path_obj.parent / new_name
+                if new_path.exists():
+                    new_path.unlink()
+                Path(pdf_path).rename(new_path)
+                logger.info(f"資料NO挿入完了（リネーム）: {new_name}")
+                return str(new_path)
+
             logger.info(f"資料NO挿入完了: {pdf_path_obj.name}")
-            return True
+            return pdf_path
 
         except Exception as e:
             logger.error(f"単一PDF処理エラー ({pdf_path}): {e}")
-            return False
+            return None
+
+    @staticmethod
+    def _to_fullwidth_number(text: str) -> str:
+        """数字とハイフンを全角に変換"""
+        result = []
+        for c in text:
+            if '0' <= c <= '9':
+                result.append(chr(ord('０') + ord(c) - ord('0')))
+            elif c == '-':
+                result.append('－')
+            else:
+                result.append(c)
+        return ''.join(result)
 
     def _create_japanese_overlay_with_proper_embedding(self, page_width: float, page_height: float,
                                                      document_text: str, x: float, y: float,

@@ -32,6 +32,7 @@ from ..utils.drag_drop import drag_drop_handler
 from ..utils.file_utils import FileScanner
 from ..utils.security import SecurityValidator, InputValidator
 from .draggable_list import DraggableFileList
+from .update_banner import UpdateBanner
 from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
@@ -115,6 +116,9 @@ class UnifiedWindow:
         # メインフレーム
         self.main_frame = ctk.CTkFrame(self.root, fg_color=("gray95", "gray10"))
         self.main_frame.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # ── アップデートバナー（新バージョン検出時のみ表示） ──
+        UpdateBanner(self.main_frame)
 
         # ── ヘッダー ──
         header_frame = ctk.CTkFrame(
