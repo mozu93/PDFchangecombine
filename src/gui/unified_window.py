@@ -33,6 +33,7 @@ from ..utils.file_utils import FileScanner
 from ..utils.security import SecurityValidator, InputValidator
 from .draggable_list import DraggableFileList
 from .update_banner import UpdateBanner
+from .help_dialog import HelpDialog
 from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
@@ -132,6 +133,18 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=18, weight="bold"),
             text_color="white"
         ).pack(side="left", padx=16, pady=10)
+
+        ctk.CTkButton(
+            header_frame,
+            text="?",
+            width=32, height=32,
+            corner_radius=16,
+            fg_color="#3D82C4",
+            hover_color="#5494D6",
+            text_color="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=15, weight="bold"),
+            command=self._open_help,
+        ).pack(side="right", padx=12, pady=10)
 
         # ── カスタムタブバー ──
         _TAB_DEFS = [
@@ -1786,6 +1799,10 @@ class UnifiedWindow:
             self.root.destroy()
             logger.info("PDF変換・結合ツール 正常終了")
     
+    def _open_help(self) -> None:
+        """ヘルプダイアログを開く"""
+        HelpDialog(self.root)
+
     def run(self) -> None:
         """アプリケーション実行"""
         logger.info("統合アプリケーション実行開始")
