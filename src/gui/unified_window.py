@@ -82,9 +82,8 @@ class UnifiedWindow:
         # オプション管理
         self.split_excel_sheets_var = ctk.BooleanVar(value=False)
 
-        # チェックボックス管理
-        self.file_checkboxes = {}  # 変換用ファイルチェックボックス
-        self.combine_checkboxes = {}  # 結合用ファイルチェックボックス
+        # 変換タブのファイル管理（廃止済み・互換性のため空辞書で残す）
+        self.file_checkboxes = {}
         
         # UI作成
         self._create_main_ui()
