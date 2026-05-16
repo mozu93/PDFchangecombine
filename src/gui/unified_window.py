@@ -233,16 +233,25 @@ class UnifiedWindow:
         self.file_checkboxes = {}
 
         # Excelシート分割オプション
-        self.excel_options_frame = ctk.CTkFrame(self.conversion_tab)
+        self.excel_options_frame = ctk.CTkFrame(
+            self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=1, border_color=CLR_BORDER, corner_radius=6
+        )
         self.excel_options_frame.pack(fill="x", padx=15, pady=(0, 5))
 
-        self.split_excel_sheets_checkbox = ctk.CTkCheckBox(
+        ctk.CTkLabel(
             self.excel_options_frame,
-            text="Excelのシートを個別のPDFに分割する",
+            text="⚙️ Excelのシートを個別のPDFに分割する",
+            font=ctk.CTkFont(size=11), text_color=CLR_DARK_TEXT
+        ).pack(side="left", padx=(10, 8), pady=6)
+
+        self.split_excel_sheets_switch = ctk.CTkSwitch(
+            self.excel_options_frame, text="",
             variable=self.split_excel_sheets_var,
-            font=ctk.CTkFont(size=12)
+            onvalue=True, offvalue=False,
+            progress_color=CLR_PRIMARY
         )
-        self.split_excel_sheets_checkbox.pack(side="left", padx=8, pady=5)
+        self.split_excel_sheets_switch.pack(side="right", padx=10, pady=6)
         
         
 
@@ -358,43 +367,69 @@ class UnifiedWindow:
         )
         self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # オプション
+        # オプションフレーム（白紙挿入 + ページ番号）
         self.add_blank_page_var = ctk.BooleanVar()
-        self.add_blank_page_checkbox = ctk.CTkCheckBox(
-            self.combination_tab,
-            text="奇数ページのPDFの末尾に白紙ページを挿入する",
-            variable=self.add_blank_page_var,
-            font=ctk.CTkFont(size=12)
-        )
-        self.add_blank_page_checkbox.pack(pady=(0, 10))
-
-        # ページ番号オプション
-        self.page_number_frame = ctk.CTkFrame(self.combination_tab)
-        self.page_number_frame.pack(fill="x", padx=15, pady=(0, 10))
-
         self.add_page_number_var = ctk.BooleanVar()
-        self.add_page_number_checkbox = ctk.CTkCheckBox(
-            self.page_number_frame,
-            text="フッター中央にページ番号を挿入する",
-            variable=self.add_page_number_var,
-            font=ctk.CTkFont(size=12),
+
+        options_frame = ctk.CTkFrame(
+            self.combination_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=1, border_color=CLR_BORDER, corner_radius=6
+        )
+        options_frame.pack(fill="x", padx=15, pady=(0, 5))
+
+        # 白紙挿入スイッチ
+        blank_row = ctk.CTkFrame(options_frame, fg_color="transparent")
+        blank_row.pack(fill="x", padx=8, pady=(6, 2))
+
+        ctk.CTkLabel(
+            blank_row, text="奇数ページのPDF末尾に白紙ページを挿入する",
+            font=ctk.CTkFont(size=11), text_color=CLR_DARK_TEXT
+        ).pack(side="left")
+
+        self.add_blank_page_switch = ctk.CTkSwitch(
+            blank_row, text="", variable=self.add_blank_page_var,
+            onvalue=True, offvalue=False, progress_color=CLR_PRIMARY
+        )
+        self.add_blank_page_switch.pack(side="right")
+
+        # ページ番号スイッチ
+        page_row = ctk.CTkFrame(options_frame, fg_color="transparent")
+        page_row.pack(fill="x", padx=8, pady=(2, 6))
+
+        ctk.CTkLabel(
+            page_row, text="フッター中央にページ番号を挿入する",
+            font=ctk.CTkFont(size=11), text_color=CLR_DARK_TEXT
+        ).pack(side="left")
+
+        self.add_page_number_switch = ctk.CTkSwitch(
+            page_row, text="", variable=self.add_page_number_var,
+            onvalue=True, offvalue=False, progress_color=CLR_PRIMARY,
             command=self._toggle_page_number_options
         )
-        self.add_page_number_checkbox.pack(side="left", padx=(8,0), pady=10)
+        self.add_page_number_switch.pack(side="right", padx=(8, 0))
 
-        self.start_page_label = ctk.CTkLabel(self.page_number_frame, text="開始ページ:", font=ctk.CTkFont(size=12))
-        self.start_page_label.pack(side="left", padx=(10, 0), pady=10)
+        # 開始ページ・開始番号（インライン）
+        self.start_page_label = ctk.CTkLabel(
+            page_row, text="開始ページ:", font=ctk.CTkFont(size=11)
+        )
+        self.start_page_label.pack(side="right", padx=(8, 2))
 
         self.start_page_var = ctk.StringVar(value="1")
-        self.start_page_entry = ctk.CTkEntry(self.page_number_frame, textvariable=self.start_page_var, width=40)
-        self.start_page_entry.pack(side="left", padx=(0, 10), pady=10)
+        self.start_page_entry = ctk.CTkEntry(
+            page_row, textvariable=self.start_page_var, width=40
+        )
+        self.start_page_entry.pack(side="right")
 
-        self.start_number_label = ctk.CTkLabel(self.page_number_frame, text="開始番号:", font=ctk.CTkFont(size=12))
-        self.start_number_label.pack(side="left", padx=(10, 0), pady=10)
+        self.start_number_label = ctk.CTkLabel(
+            page_row, text="開始番号:", font=ctk.CTkFont(size=11)
+        )
+        self.start_number_label.pack(side="right", padx=(8, 2))
 
         self.start_number_var = ctk.StringVar(value="1")
-        self.start_number_entry = ctk.CTkEntry(self.page_number_frame, textvariable=self.start_number_var, width=40)
-        self.start_number_entry.pack(side="left", padx=(0, 10), pady=10)
+        self.start_number_entry = ctk.CTkEntry(
+            page_row, textvariable=self.start_number_var, width=40
+        )
+        self.start_number_entry.pack(side="right")
 
         self._toggle_page_number_options()
         
