@@ -310,7 +310,8 @@ class UnifiedWindow:
             command=self._clear_combination_files,
             height=32, width=70,
             fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
-            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            state="disabled"
         )
         self.combination_clear_btn.pack(side="left", padx=(0, 4), pady=6)
 
@@ -1237,12 +1238,18 @@ class UnifiedWindow:
             # メッセージを非表示にして、ファイル数を更新
             self.combination_list_msg.pack_forget()
             self.combination_combine_btn.configure(state="normal")
+            if hasattr(self, 'combination_clear_btn'):
+                self.combination_clear_btn.configure(state="normal")
             self.combination_count_label.configure(text=f"ファイル数: {len(current_files)}")
             self.combination_status.configure(text=f"{len(current_files)}個のPDFファイルが追加されました")
         else:
             # ファイルがない場合は初期メッセージを表示
             self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
             self.combination_combine_btn.configure(state="disabled")
+            if hasattr(self, 'combination_clear_btn'):
+                self.combination_clear_btn.configure(state="disabled")
+            if hasattr(self, 'combination_delete_btn'):
+                self.combination_delete_btn.configure(state="disabled")
             self.combination_count_label.configure(text="ファイル数: 0")
             self.combination_status.configure(text="PDFファイルを追加してください")
 
