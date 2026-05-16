@@ -114,29 +114,39 @@ class UnifiedWindow:
     def _create_main_ui(self) -> None:
         """メインUI作成"""
         # メインフレーム
-        self.main_frame = ctk.CTkFrame(self.root)
+        self.main_frame = ctk.CTkFrame(self.root, fg_color=("gray95", "gray10"))
         self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # タイトルバー
-        title_frame = ctk.CTkFrame(self.main_frame)
-        title_frame.pack(fill="x", padx=10, pady=(10, 5))
-        
-        title_label = ctk.CTkLabel(
-            title_frame,
-            text="📄 PDF変換・結合ツール",
-            font=ctk.CTkFont(size=20, weight="bold")
+
+        # ── ヘッダー（クリーンブルー） ──
+        header_frame = ctk.CTkFrame(
+            self.main_frame, fg_color=CLR_PRIMARY, corner_radius=8
         )
-        title_label.pack(pady=10)
-        
-        # タブビュー作成（450×700縦長ウィンドウに最適化）
-        self.tab_view = ctk.CTkTabview(self.main_frame, width=530, height=620,
-                                        text_color=("black", "white"),
-                                        segmented_button_selected_color="#fffacd",
-                                        segmented_button_unselected_color=("gray90", "gray25"),
-                                        segmented_button_selected_hover_color="#fffacd",
-                                        segmented_button_unselected_hover_color=("gray90", "gray25"))
+        header_frame.pack(fill="x", padx=10, pady=(10, 5))
+
+        ctk.CTkLabel(
+            header_frame, text="📄",
+            font=ctk.CTkFont(size=22)
+        ).pack(side="left", padx=(14, 6), pady=10)
+
+        ctk.CTkLabel(
+            header_frame,
+            text="PDF変換・結合ツール",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="white"
+        ).pack(side="left", pady=10)
+
+        self.tab_view = ctk.CTkTabview(
+            self.main_frame,
+            width=530, height=620,
+            text_color=(CLR_DARK_TEXT, CLR_DARK_TEXT),
+            segmented_button_selected_color=CLR_LIGHT_BG,
+            segmented_button_selected_hover_color=CLR_LIGHT_BG,
+            segmented_button_unselected_color=("gray90", "gray25"),
+            segmented_button_unselected_hover_color=(CLR_BORDER, "gray30"),
+            border_color=CLR_BORDER, border_width=1
+        )
         self.tab_view.pack(fill="both", expand=True, padx=10, pady=5)
-        self.tab_view._segmented_button.configure(font=("Meiryo UI", 17))
+        self.tab_view._segmented_button.configure(font=ctk.CTkFont(size=13, weight="bold"))
         
         # タブ追加
         self.conversion_tab = self.tab_view.add("PDF変換")
@@ -1406,15 +1416,6 @@ class UnifiedWindow:
             folder_to_open = str(Path(output_paths[0]).parent)
             self._open_folder(folder_to_open)
 
-    def _set_conversion_frame_colors(self):
-        """変換タブのフレーム内部キャンバスの背景色を設定"""
-        try:
-            if hasattr(self.file_list_frame, '_parent_canvas'):
-                self.file_list_frame._parent_canvas.configure(bg="#E6F7FF")
-            if hasattr(self.file_list_frame, '_parent_frame'):
-                self.file_list_frame._parent_frame.configure(fg_color="#E6F7FF")
-        except Exception as e:
-            pass  # エラーは無視
 
     def _on_conversion_complete(self, results) -> None:
         """変換完了処理"""
