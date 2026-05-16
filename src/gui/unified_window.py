@@ -82,9 +82,6 @@ class UnifiedWindow:
         # オプション管理
         self.split_excel_sheets_var = ctk.BooleanVar(value=False)
 
-        # 変換タブのファイル管理（廃止済み・互換性のため空辞書で残す）
-        self.file_checkboxes = {}
-        
         # UI作成
         self._create_main_ui()
         self._setup_drag_drop()
@@ -238,9 +235,6 @@ class UnifiedWindow:
             justify="left"
         )
         self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
-
-        # ファイルチェックボックス管理（廃止・互換性のため空で残す）
-        self.file_checkboxes = {}
 
         # Excelシート分割オプション
         self.excel_options_frame = ctk.CTkFrame(
@@ -1005,14 +999,9 @@ class UnifiedWindow:
     def _check_file_limit_for_arbitrary(self) -> None:
         """任意Noモードでのファイル数制限チェック"""
         if self.numbering_type_var.get() == "任意No" and len(self.document_number_files) > 1:
-            # 最初のファイル以外を削除
             files_to_remove = self.document_number_files[1:]
             for file_path in files_to_remove:
-                self.document_number_files.remove(file_path)
-                if file_path in self.document_number_checkboxes:
-                    self.document_number_checkboxes[file_path].destroy()
-                    del self.document_number_checkboxes[file_path]
-
+                self.document_draggable_list.remove_file(file_path)
             self._update_document_number_display()
             self.document_status.configure(text="任意Noモードでは1ファイルのみ対応です")
 
@@ -1345,7 +1334,6 @@ class UnifiedWindow:
             return
         self.conversion_files.clear()
         self.conversion_draggable_list.clear_files()
-        self.file_checkboxes.clear()
         self._update_conversion_display()
         self.conversion_status.configure(text="ファイルリストをクリアしました")
         logger.info("変換ファイル全クリア")
