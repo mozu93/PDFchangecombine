@@ -32,6 +32,12 @@ from ..utils.drag_drop import drag_drop_handler
 from ..utils.file_utils import FileScanner
 from ..utils.security import SecurityValidator, InputValidator
 from .draggable_list import DraggableFileList
+from .theme import (
+    CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
+    CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
+    CLR_RED_TEXT, CLR_GRAY_TEXT, CLR_DARK_TEXT, CLR_LIST_HEADER,
+    CLR_WHITE, get_file_type_badge
+)
 from ..utils.error_handler import error_handler, ErrorSeverity
 from ..core.converter import PDFConverter
 from ..core.combiner import PDFCombiner
@@ -71,7 +77,6 @@ class UnifiedWindow:
         # 状態管理
         self.conversion_files: List[str] = []
         self.combination_files: List[str] = []
-        self.combination_checkboxes: Dict[str, ctk.CTkCheckBox] = {}
         self.document_number_files: List[str] = []  # 資料NO挿入用ファイル（旧式、互換性のため残す）
 
         # オプション管理
@@ -177,7 +182,7 @@ class UnifiedWindow:
         self.conversion_clear_btn = ctk.CTkButton(
             conversion_btn_frame,
             text="🗑️ 選択クリア",
-            command=self._clear_files,
+            command=self._clear_all_conversion,
             height=35,
             width=90,
             state="disabled"
@@ -193,17 +198,36 @@ class UnifiedWindow:
         )
         self.conversion_count_label.pack(side="right", padx=10, pady=10)
         
-        # ファイルリストエリア（チェックボックス付き）
-        self.file_list_frame = ctk.CTkScrollableFrame(
+        # ファイルリスト（DraggableFileList・ドラッグ無効）
+        self.conversion_draggable_list = DraggableFileList(
             self.conversion_tab,
-            height=200,  # 450×700ウィンドウに最適な高さ
-            label_text="📁 変換対象ファイルリスト",
-            fg_color=("#E6F7FF", "#E6F7FF")
+            drag_enabled=False,
+            height=200,
+            label_text="📁 変換対象ファイルリスト"
         )
-        self.file_list_frame.pack(fill="both", expand=True, padx=15, pady=8)
+        self.conversion_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
+        self.conversion_draggable_list.on_selection_change = self._on_conversion_selection_change
 
-        # 内部キャンバスの背景色も設定
-        self.file_list_frame.after(1, self._set_conversion_frame_colors)
+        # 初期表示メッセージ
+        self.initial_message_label = ctk.CTkLabel(
+            self.conversion_draggable_list,
+            text=(
+                "📁 ファイルをここにドラッグ&ドロップしてください\n\n"
+                "対応ファイル:\n"
+                "• Word: .docx, .doc\n"
+                "• Excel: .xlsx, .xls\n"
+                "• PowerPoint: .pptx, .ppt\n"
+                "• 画像: .jpg, .jpeg, .png, .bmp, .gif, .tiff\n"
+                "• PDF: .pdf （変換済フォルダにコピー）\n\n"
+                "複数ファイルやフォルダもドロップできます"
+            ),
+            font=ctk.CTkFont(size=12),
+            justify="left"
+        )
+        self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # ファイルチェックボックス管理（廃止・互換性のため空で残す）
+        self.file_checkboxes = {}
 
         # Excelシート分割オプション
         self.excel_options_frame = ctk.CTkFrame(self.conversion_tab)
@@ -216,20 +240,6 @@ class UnifiedWindow:
             font=ctk.CTkFont(size=12)
         )
         self.split_excel_sheets_checkbox.pack(side="left", padx=8, pady=5)
-        
-        # ファイルチェックボックスの管理
-        self.file_checkboxes = {}  # {file_path: checkbox_widget}
-        
-        # 初期表示メッセージ
-        self.initial_message_label = ctk.CTkLabel(
-            self.file_list_frame,
-            text="📁 ファイルをここにドラッグ&ドロップしてください\n\n対応ファイル:\n• Word: .docx, .doc\n• Excel: .xlsx, .xls (全シートを1つのPDFに変換)\n• PowerPoint: .pptx, .ppt\n• 画像: .jpg, .jpeg, .png, .bmp, .gif, .tiff\n• PDF: .pdf (変換済フォルダにコピー)\n\n複数ファイルやフォルダもドロップできます",
-            font=ctk.CTkFont(size=12),
-            justify="left",
-            fg_color="#E6F7FF",
-            corner_radius=8
-        )
-        self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
         
         
 
@@ -615,8 +625,8 @@ class UnifiedWindow:
             # 変換タブのドラッグ&ドロップ設定
             office_filter = drag_drop_handler.create_office_image_filter()
             drag_drop_handler.setup_drag_drop(
-                self.file_list_frame, 
-                self._add_conversion_files, 
+                self.conversion_draggable_list,
+                self._add_conversion_files,
                 office_filter
             )
             
@@ -676,25 +686,12 @@ class UnifiedWindow:
         """変換ファイル追加"""
         scan_result = FileScanner.scan_files_from_paths(paths)
         valid_files = scan_result['valid']
-        
+
         if valid_files:
-            # 重複を避けるために新しいファイルのみ追加
             new_files = [f for f in valid_files if f not in self.conversion_files]
             if new_files:
                 self.conversion_files.extend(new_files)
-                
-                # 新しいファイルのチェックボックスを作成
-                for file_path in new_files:
-                    filename = Path(file_path).name
-                    checkbox = ctk.CTkCheckBox(
-                        self.file_list_frame,
-                        text=filename,
-                        font=ctk.CTkFont(size=13)
-                    )
-                    checkbox.pack(anchor="w", pady=2, padx=10)
-                    checkbox.select()
-                    self.file_checkboxes[file_path] = checkbox
-                
+                self.conversion_draggable_list.add_files(new_files)
                 self._update_conversion_display()
                 logger.info(f"変換ファイル追加: {len(new_files)}個")
             else:
@@ -751,6 +748,14 @@ class UnifiedWindow:
         
         if files:
             self._add_combination_files(list(files))
+
+    def _on_conversion_selection_change(self, selected_files: List[str]) -> None:
+        """変換リストの選択変更時のコールバック"""
+        has_selection = len(selected_files) > 0
+        if hasattr(self, 'conversion_delete_btn'):
+            self.conversion_delete_btn.configure(
+                state="normal" if has_selection else "disabled"
+            )
 
     def _on_combination_selection_change(self, selected_files: List[str]) -> None:
         """結合リストの選択変更時のコールバック"""
@@ -1214,26 +1219,25 @@ class UnifiedWindow:
     
     def _update_conversion_display(self) -> None:
         """変換タブ表示更新"""
-        # ファイル数表示更新
-        self.conversion_count_label.configure(text=f"ファイル数: {len(self.conversion_files)}")
+        current_files = self.conversion_draggable_list.get_files()
+        self.conversion_files = current_files
+        self.conversion_count_label.configure(text=f"ファイル数: {len(current_files)}")
 
-        if self.conversion_files:
-            # 初期メッセージを非表示
+        if current_files:
             self.initial_message_label.pack_forget()
             self.conversion_convert_btn.configure(state="normal")
-            self.conversion_clear_btn.configure(state="normal")
-            self.conversion_status.configure(text=f"{len(self.conversion_files)}個のファイルが追加されました")
+            if hasattr(self, 'conversion_clear_btn'):
+                self.conversion_clear_btn.configure(state="normal")
+            self.conversion_status.configure(
+                text=f"{len(current_files)}個のファイルが追加されました"
+            )
         else:
-            # ファイルがない場合は初期メッセージを表示
             self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
             self.conversion_convert_btn.configure(state="disabled")
-            self.conversion_clear_btn.configure(state="disabled")
-            
-            # ファイルがない場合は全てのチェックボックスを削除
-            if hasattr(self, 'file_checkboxes') and self.file_checkboxes:
-                for checkbox in self.file_checkboxes.values():
-                    checkbox.destroy()
-                self.file_checkboxes.clear()
+            if hasattr(self, 'conversion_clear_btn'):
+                self.conversion_clear_btn.configure(state="disabled")
+            if hasattr(self, 'conversion_delete_btn'):
+                self.conversion_delete_btn.configure(state="disabled")
             self.conversion_status.configure(text="変換するファイルを追加してください")
     
     def _update_combination_display(self) -> None:
@@ -1362,56 +1366,32 @@ class UnifiedWindow:
         except Exception as e:
             logger.error(f"チェックボックス更新中にエラーが発生: {str(e)}")
     
-    def _clear_files(self, force: bool = False) -> None:
-        """変換ファイルクリア（選択削除機能付き）"""
-        try:
-            # チェックボックスが存在する場合の選択削除機能
-            if hasattr(self, 'file_checkboxes') and self.file_checkboxes:
-                selected_files = []
-                for file_path, checkbox in self.file_checkboxes.items():
-                    if checkbox.get():
-                        selected_files.append(file_path)
-                
-                if selected_files:
-                    # 選択されたファイルのみ削除
-                    for file_path in selected_files:
-                        if file_path in self.conversion_files:
-                            self.conversion_files.remove(file_path)
-                        if file_path in self.file_checkboxes:
-                            self.file_checkboxes[file_path].destroy()
-                            del self.file_checkboxes[file_path]
-                    logger.info(f"選択ファイル削除: {len(selected_files)}個")
-                else:
-                    # 全ファイルクリア（確認ダイアログ付き）
-                    if self.conversion_files:
-                        if force or self._show_confirmation_dialog("全ファイルクリア", 
-                            f"全{len(self.conversion_files)}件のファイルをクリアしますか？"):
-                            self.conversion_files.clear()
-                            if hasattr(self, 'file_checkboxes'):
-                                for checkbox in self.file_checkboxes.values():
-                                    checkbox.destroy()
-                                self.file_checkboxes.clear()
-                            logger.info("全変換ファイルをクリア")
-                        else:
-                            return
-            else:
-                # チェックボックスがない場合は全クリア
-                if self.conversion_files:
-                    result = self._show_confirmation_dialog("ファイルクリア", 
-                        f"{len(self.conversion_files)}件のファイルをクリアしますか？")
-                    if result:
-                        self.conversion_files.clear()
-                        logger.info("変換ファイル全クリア")
-                    else:
-                        return
-            
-            # UI更新
-            self._update_conversion_display()
-            self.conversion_status.configure(text="ファイルリストをクリアしました")
-            
-        except Exception as e:
-            logger.error(f"ファイルクリア中にエラー: {str(e)}")
-            error_handler.handle_error(e, ErrorSeverity.WARNING, "ファイルクリア処理")
+    def _delete_selected_conversion(self) -> None:
+        """選択中の変換ファイルを削除"""
+        selected = self.conversion_draggable_list.get_selected_files()
+        if not selected:
+            return
+        for fp in selected:
+            if fp in self.conversion_files:
+                self.conversion_files.remove(fp)
+        self.conversion_draggable_list.remove_selected_files()
+        self._update_conversion_display()
+        logger.info(f"変換ファイル削除: {len(selected)}個")
+
+    def _clear_all_conversion(self, force: bool = False) -> None:
+        """変換ファイルを全クリア"""
+        if not self.conversion_files:
+            return
+        if not force and not self._show_confirmation_dialog(
+            "全ファイルクリア", f"全{len(self.conversion_files)}件をクリアしますか？"
+        ):
+            return
+        self.conversion_files.clear()
+        self.conversion_draggable_list.clear_files()
+        self.file_checkboxes.clear()
+        self._update_conversion_display()
+        self.conversion_status.configure(text="ファイルリストをクリアしました")
+        logger.info("変換ファイル全クリア")
     
     def _start_conversion(self) -> None:
         """PDF変換開始"""
@@ -1520,8 +1500,8 @@ class UnifiedWindow:
             messagebox.showerror("変換失敗", message)
         
         # ファイルリストをクリア
-        self._clear_files(force=True)
-        
+        self._clear_all_conversion(force=True)
+
         # UI有効化
         self.conversion_convert_btn.configure(state="normal")
     
