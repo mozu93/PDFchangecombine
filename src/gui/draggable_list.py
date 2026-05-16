@@ -7,81 +7,150 @@ from pathlib import Path
 from typing import List, Callable, Optional, Dict
 import tkinter as tk
 
+from .theme import (
+    CLR_LIGHT_BG, CLR_SEL_BORDER, CLR_RED_LIGHT, CLR_RED_TEXT,
+    CLR_GRAY_TEXT, CLR_DARK_TEXT, get_file_type_badge
+)
+
 
 class DraggableListItem(ctk.CTkFrame):
-    """ドラッグ可能なリストアイテム"""
+    """ドラッグ可能なリストアイテム（チェックボックスなし・行選択式）"""
 
-    def __init__(self, parent, file_path: str, on_select: Callable, on_drag_start: Callable, **kwargs):
+    def __init__(self, parent, file_path: str, on_select: Callable,
+                 on_drag_start: Callable,
+                 on_remove: Optional[Callable] = None,
+                 drag_enabled: bool = True,
+                 **kwargs):
         super().__init__(parent, **kwargs)
-
         self.file_path = file_path
         self.on_select = on_select
         self.on_drag_start = on_drag_start
+        self.on_remove = on_remove
+        self.drag_enabled = drag_enabled
         self.is_selected = False
         self.is_dragging = False
-
         self._setup_ui()
-        self._setup_drag_events()
+        self._setup_events()
 
     def _setup_ui(self):
-        """UIセットアップ"""
-        self.configure(height=35, fg_color="transparent")
+        self.configure(height=44, fg_color="transparent", corner_radius=4)
 
-        # チェックボックス
-        self.checkbox = ctk.CTkCheckBox(
-            self,
-            text="",
-            width=20,
-            command=self._on_checkbox_change
+        # ── 左: ドラッグハンドル（drag_enabled 時のみ） ──
+        if self.drag_enabled:
+            self.drag_handle = ctk.CTkLabel(
+                self, text="⋮⋮", width=20,
+                font=ctk.CTkFont(size=12),
+                text_color=(CLR_GRAY_TEXT, CLR_GRAY_TEXT)
+            )
+            self.drag_handle.pack(side="left", padx=(6, 0), pady=4)
+        else:
+            self.drag_handle = None
+
+        # ── 右: ×ボタン（ホバー時のみ表示） ──
+        self.remove_btn = None
+        if self.on_remove:
+            self.remove_btn = ctk.CTkButton(
+                self, text="✕", width=22, height=22,
+                font=ctk.CTkFont(size=10, weight="bold"),
+                fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
+                hover_color="#FEB2B2", corner_radius=11,
+                command=self._on_remove_click
+            )
+            self.remove_btn.pack(side="right", padx=(0, 8), pady=4)
+            self.remove_btn.pack_forget()  # 初期非表示
+
+        # ── 右: バッジ ──
+        badge_text, badge_color = get_file_type_badge(self.file_path)
+        self.badge_label = ctk.CTkLabel(
+            self, text=badge_text,
+            font=ctk.CTkFont(size=9, weight="bold"),
+            fg_color=badge_color, text_color="white",
+            corner_radius=4, width=36, height=18
         )
-        self.checkbox.pack(side="left", padx=(5, 10), pady=5)
+        self.badge_label.pack(side="right", padx=(4, 4), pady=4)
 
-        # ファイル名ラベル
+        # ── 中: ファイル名 + パス ──
+        self.text_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.text_frame.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=3)
+
         filename = Path(self.file_path).name
-        self.label = ctk.CTkLabel(
-            self,
-            text=filename,
-            anchor="w",
-            font=ctk.CTkFont(size=13)
+        self.filename_label = ctk.CTkLabel(
+            self.text_frame, text=filename,
+            anchor="w", font=ctk.CTkFont(size=12),
+            text_color=CLR_DARK_TEXT
         )
-        self.label.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=5)
+        self.filename_label.pack(anchor="w")
 
-        # ドラッグハンドル（見た目上の表示）
-        self.drag_handle = ctk.CTkLabel(
-            self,
-            text="⋮⋮",
-            width=20,
-            font=ctk.CTkFont(size=12),
-            text_color=("gray60", "gray40")
+        parent_path = str(Path(self.file_path).parent)
+        display_path = (f"...{parent_path[-35:]}" if len(parent_path) > 35
+                        else parent_path)
+        self.path_label = ctk.CTkLabel(
+            self.text_frame, text=display_path,
+            anchor="w", font=ctk.CTkFont(size=9),
+            text_color=CLR_GRAY_TEXT
         )
-        self.drag_handle.pack(side="right", padx=5, pady=5)
+        self.path_label.pack(anchor="w")
 
-    def _setup_drag_events(self):
-        """ドラッグイベントのセットアップ"""
-        # すべての子ウィジェットにもイベントを設定
-        widgets = [self, self.label, self.drag_handle]
+    def _setup_events(self):
+        clickable = [self, self.text_frame, self.filename_label, self.path_label]
+        if self.drag_handle:
+            clickable.append(self.drag_handle)
 
-        for widget in widgets:
-            widget.bind("<Button-1>", self._on_click)
-            widget.bind("<B1-Motion>", self._on_drag)
-            widget.bind("<ButtonRelease-1>", self._on_release)
-            widget.bind("<Double-Button-1>", self._on_double_click)
+        for w in clickable:
+            w.bind("<Button-1>",        self._on_click)
+            w.bind("<ButtonRelease-1>", self._on_release)
+            w.bind("<Enter>",           self._on_hover_enter)
+            w.bind("<Leave>",           self._on_hover_leave)
+            if self.drag_enabled:
+                w.bind("<B1-Motion>", self._on_drag)
 
-    def _on_checkbox_change(self):
-        """チェックボックス変更時の処理"""
-        self.is_selected = self.checkbox.get()
-        self.on_select(self.file_path, self.is_selected)
-        self._update_appearance()
+    # ── ホバー ──────────────────────────────────────────────
+
+    def _on_hover_enter(self, event=None):
+        if self.remove_btn:
+            self.remove_btn.pack(side="right", padx=(0, 8), pady=4)
+
+    def _on_hover_leave(self, event=None):
+        self.after(80, self._check_hover)
+
+    def _check_hover(self):
+        """マウスが行フレーム外に出たときのみ×ボタンを隠す"""
+        try:
+            x, y = self.winfo_pointerxy()
+            widget = self.winfo_containing(x, y)
+            w, in_self = widget, False
+            while w is not None:
+                if w == self:
+                    in_self = True
+                    break
+                try:
+                    w = w.master
+                except Exception:
+                    break
+            if not in_self and self.remove_btn:
+                self.remove_btn.pack_forget()
+        except Exception:
+            pass
+
+    def _on_remove_click(self):
+        if self.on_remove:
+            self.on_remove(self.file_path)
+
+    # ── クリック / ドラッグ ─────────────────────────────────
 
     def _on_click(self, event):
-        """クリック開始"""
         self.start_x = event.x_root
         self.start_y = event.y_root
         self.is_dragging = False
 
+    def _on_release(self, event):
+        if not self.is_dragging:
+            self.set_selected(not self.is_selected)
+            self.on_select(self.file_path, self.is_selected)
+        else:
+            self.is_dragging = False
+
     def _on_drag(self, event):
-        """ドラッグ中"""
-        # ドラッグ開始判定（5ピクセル以上移動した場合）
         if not self.is_dragging and (
             abs(event.x_root - self.start_x) > 5 or
             abs(event.y_root - self.start_y) > 5
@@ -89,37 +158,18 @@ class DraggableListItem(ctk.CTkFrame):
             self.is_dragging = True
             self.on_drag_start(self, event)
 
-    def _on_release(self, event):
-        """ドラッグ終了"""
-        if self.is_dragging:
-            self.is_dragging = False
-
-    def _on_double_click(self, event):
-        """ダブルクリック（チェックボックス切り替え）"""
-        self.checkbox.toggle()
-        self._on_checkbox_change()
+    # ── 選択 ────────────────────────────────────────────────
 
     def set_selected(self, selected: bool):
-        """選択状態の設定"""
         self.is_selected = selected
-        self.checkbox.set(selected)
         self._update_appearance()
 
     def _update_appearance(self):
-        """外観の更新"""
         if self.is_selected:
-            # より目立つ色に変更：オレンジ系（親フレームと子ウィジェット両方）
-            bg_color = ("#FFE0B2", "#FF8C00")
-            self.configure(fg_color=bg_color)
-            # 子ウィジェットの背景色も変更
-            self.label.configure(fg_color=bg_color)
-            self.drag_handle.configure(fg_color=bg_color)
+            self.configure(fg_color=CLR_LIGHT_BG,
+                           border_width=1, border_color=CLR_SEL_BORDER)
         else:
-            bg_color = "transparent"
-            self.configure(fg_color=bg_color)
-            # 子ウィジェットも透明に戻す
-            self.label.configure(fg_color=bg_color)
-            self.drag_handle.configure(fg_color=bg_color)
+            self.configure(fg_color="transparent", border_width=0)
 
 
 class DraggableFileList(ctk.CTkScrollableFrame):
