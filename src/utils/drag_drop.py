@@ -15,6 +15,17 @@ from .file_utils import FileScanner
 class DragDropHandler:
     """ドラッグ&ドロップ処理管理クラス"""
 
+    def setup_drag_drop_recursive(self, widget: tk.Widget,
+                                  drop_callback: Callable[[List[str]], None],
+                                  file_filter: Optional[Callable[[str], bool]] = None) -> None:
+        """ウィジェットと全ての子孫を再帰的にドロップターゲットとして登録"""
+        self.setup_drag_drop(widget, drop_callback, file_filter)
+        try:
+            for child in widget.winfo_children():
+                self.setup_drag_drop_recursive(child, drop_callback, file_filter)
+        except Exception:
+            pass
+
     def setup_drag_drop(self, widget: tk.Widget,
                        drop_callback: Callable[[List[str]], None],
                        file_filter: Optional[Callable[[str], bool]] = None) -> bool:

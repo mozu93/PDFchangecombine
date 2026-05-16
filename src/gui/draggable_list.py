@@ -12,6 +12,11 @@ from .theme import (
     CLR_GRAY_TEXT, CLR_DARK_TEXT, get_file_type_badge, FONT_FAMILY
 )
 
+try:
+    from ..utils.drag_drop import drag_drop_handler as _drag_drop_handler
+except Exception:
+    _drag_drop_handler = None
+
 
 class DraggableListItem(ctk.CTkFrame):
     """ドラッグ可能なリストアイテム（チェックボックスなし・行選択式）"""
@@ -33,30 +38,21 @@ class DraggableListItem(ctk.CTkFrame):
         self._setup_events()
 
     def _setup_ui(self):
-        self.configure(height=44, fg_color="transparent", corner_radius=4)
+        self.configure(height=26, fg_color="transparent", corner_radius=4)
 
-        # ── 左: ドラッグハンドル（drag_enabled 時のみ） ──
-        if self.drag_enabled:
-            self.drag_handle = ctk.CTkLabel(
-                self, text="⋮⋮", width=20,
-                font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-                text_color=(CLR_GRAY_TEXT, CLR_GRAY_TEXT)
-            )
-            self.drag_handle.pack(side="left", padx=(6, 0), pady=4)
-        else:
-            self.drag_handle = None
+        self.drag_handle = None
 
         # ── 右: ×ボタン（ホバー時のみ表示） ──
         self.remove_btn = None
         if self.on_remove:
             self.remove_btn = ctk.CTkButton(
-                self, text="✕", width=22, height=22,
+                self, text="✕", width=20, height=18,
                 font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
                 fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
-                hover_color="#FEB2B2", corner_radius=11,
+                hover_color="#FEB2B2", corner_radius=9,
                 command=self._on_remove_click
             )
-            self.remove_btn.pack(side="right", padx=(0, 8), pady=4)
+            self.remove_btn.pack(side="right", padx=(0, 6), pady=2)
             self.remove_btn.pack_forget()  # 初期非表示
 
         # ── 右: バッジ ──
@@ -65,13 +61,13 @@ class DraggableListItem(ctk.CTkFrame):
             self, text=badge_text,
             font=ctk.CTkFont(family=FONT_FAMILY, size=9, weight="bold"),
             fg_color=badge_color, text_color="white",
-            corner_radius=4, width=36, height=18
+            corner_radius=4, width=36, height=16
         )
-        self.badge_label.pack(side="right", padx=(4, 4), pady=4)
+        self.badge_label.pack(side="right", padx=(4, 4), pady=2)
 
-        # ── 中: ファイル名 + パス ──
+        # ── 中: ファイル名 ──
         self.text_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.text_frame.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=3)
+        self.text_frame.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=1)
 
         filename = Path(self.file_path).name
         self.filename_label = ctk.CTkLabel(
@@ -81,18 +77,8 @@ class DraggableListItem(ctk.CTkFrame):
         )
         self.filename_label.pack(anchor="w")
 
-        parent_path = str(Path(self.file_path).parent)
-        display_path = (f"...{parent_path[-35:]}" if len(parent_path) > 35
-                        else parent_path)
-        self.path_label = ctk.CTkLabel(
-            self.text_frame, text=display_path,
-            anchor="w", font=ctk.CTkFont(family=FONT_FAMILY, size=9),
-            text_color=CLR_GRAY_TEXT
-        )
-        self.path_label.pack(anchor="w")
-
     def _setup_events(self):
-        clickable = [self, self.text_frame, self.filename_label, self.path_label]
+        clickable = [self, self.text_frame, self.filename_label]
         if self.drag_handle:
             clickable.append(self.drag_handle)
 
@@ -196,6 +182,10 @@ class DraggableFileList(ctk.CTkScrollableFrame):
         self.on_selection_change: Optional[Callable] = None
         self.on_order_change: Optional[Callable] = None
 
+        # 外部ドロップ（OSからのD&D）設定
+        self._ext_drop_callback: Optional[Callable] = None
+        self._ext_drop_filter: Optional[Callable] = None
+
     def _set_background_colors(self):
         try:
             if hasattr(self, '_parent_canvas'):
@@ -259,6 +249,25 @@ class DraggableFileList(ctk.CTkScrollableFrame):
         """選択されたファイルのリストを取得"""
         return self.selected_files.copy()
 
+    def set_external_drop(self, callback: Callable, file_filter: Optional[Callable] = None) -> None:
+        """OSからのD&D受け入れ設定を保存（新規アイテム生成時にも適用）"""
+        self._ext_drop_callback = callback
+        self._ext_drop_filter = file_filter
+
+    def _register_widget_for_drop(self, widget) -> None:
+        """ウィジェットとその子を外部D&Dターゲットとして登録"""
+        if _drag_drop_handler is None or self._ext_drop_callback is None:
+            return
+        try:
+            _drag_drop_handler.setup_drag_drop(widget, self._ext_drop_callback, self._ext_drop_filter)
+            for child in widget.winfo_children():
+                try:
+                    _drag_drop_handler.setup_drag_drop(child, self._ext_drop_callback, self._ext_drop_filter)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def _create_item(self, file_path: str):
         """リストアイテムの作成"""
         item = DraggableListItem(
@@ -268,9 +277,12 @@ class DraggableFileList(ctk.CTkScrollableFrame):
             on_drag_start=self._on_drag_start,
             on_remove=self.remove_file,
             drag_enabled=self.drag_enabled,
-            height=44
+            height=26
         )
         self.items[file_path] = item
+
+        # 新しいアイテムも外部D&Dターゲットとして登録
+        self._register_widget_for_drop(item)
 
     def _update_display(self):
         """表示の更新"""
@@ -281,7 +293,7 @@ class DraggableFileList(ctk.CTkScrollableFrame):
         # 新しい順序で表示
         for file_path in self.file_paths:
             if file_path in self.items:
-                self.items[file_path].pack(fill="x", padx=5, pady=2)
+                self.items[file_path].pack(fill="x", padx=5, pady=1)
 
         # コールバック呼び出し
         if self.on_order_change:
