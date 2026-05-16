@@ -161,41 +161,45 @@ class UnifiedWindow:
         )
         desc_label.pack(pady=(10, 5))
         
-        # ボタンフレーム（上部左側）
-        conversion_btn_frame = ctk.CTkFrame(self.conversion_tab)
-        conversion_btn_frame.pack(fill="x", padx=15, pady=(10, 5))
-        
-        # ファイル選択ボタン
-        self.conversion_select_btn = ctk.CTkButton(
-            conversion_btn_frame,
-            text="📂 ファイル選択",
-            command=self._select_conversion_files,
-            height=35,
-            width=120  # 縦長ウィンドウに合わせて幅を調整
-        )
-        self.conversion_select_btn.pack(side="left", padx=8, pady=10)
-        
+        # ── ツールバー ──
+        toolbar = ctk.CTkFrame(self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
+                                border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        toolbar.pack(fill="x", padx=15, pady=(8, 5))
 
-        
-        # クリアボタン
-        self.conversion_clear_btn = ctk.CTkButton(
-            conversion_btn_frame,
-            text="🗑️ 選択クリア",
-            command=self._clear_all_conversion,
-            height=35,
-            width=90,
+        self.conversion_select_btn = ctk.CTkButton(
+            toolbar, text="📂 ファイル追加",
+            command=self._select_conversion_files,
+            height=32, width=110,
+            fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
+            font=ctk.CTkFont(size=11, weight="bold")
+        )
+        self.conversion_select_btn.pack(side="left", padx=(8, 4), pady=6)
+
+        self.conversion_delete_btn = ctk.CTkButton(
+            toolbar, text="✕ 選択削除",
+            command=self._delete_selected_conversion,
+            height=32, width=90,
+            fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
+            hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
             state="disabled"
         )
-        self.conversion_clear_btn.pack(side="left", padx=(8, 0), pady=10)
-        
-        
-        # ファイル数表示
-        self.conversion_count_label = ctk.CTkLabel(
-            conversion_btn_frame,
-            text="ファイル数: 0",
-            font=ctk.CTkFont(size=12)
+        self.conversion_delete_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.conversion_clear_btn = ctk.CTkButton(
+            toolbar, text="🗑️ 全クリア",
+            command=self._clear_all_conversion,
+            height=32, width=80,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            state="disabled"
         )
-        self.conversion_count_label.pack(side="right", padx=10, pady=10)
+        self.conversion_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.conversion_count_label = ctk.CTkLabel(
+            toolbar, text="ファイル数: 0",
+            font=ctk.CTkFont(size=11), text_color=CLR_GRAY_TEXT
+        )
+        self.conversion_count_label.pack(side="right", padx=10, pady=6)
         
         # ファイルリスト（DraggableFileList・ドラッグ無効）
         self.conversion_draggable_list = DraggableFileList(
@@ -277,65 +281,60 @@ class UnifiedWindow:
         )
         desc_label.pack(pady=(10, 5))
         
-        # リスト操作ボタン
-        list_btn_frame = ctk.CTkFrame(self.combination_tab)
-        list_btn_frame.pack(fill="x", padx=15, pady=(10, 5))
-        
+        # ── ツールバー ──
+        toolbar = ctk.CTkFrame(self.combination_tab, fg_color=CLR_TOOLBAR_BG,
+                                border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        toolbar.pack(fill="x", padx=15, pady=(8, 5))
+
         self.combination_select_btn = ctk.CTkButton(
-            list_btn_frame,
-            text="📂 PDFファイル追加",
+            toolbar, text="📂 PDF追加",
             command=self._select_combination_files,
-            height=30,
-            width=130
+            height=32, width=100,
+            fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
+            font=ctk.CTkFont(size=11, weight="bold")
         )
-        self.combination_select_btn.pack(side="left", padx=(8,0), pady=10)
-        
-        self.combination_clear_btn = ctk.CTkButton(
-            list_btn_frame,
-            text="🗑️ クリア", 
-            command=self._clear_combination_files,
-            height=30,
-            width=70
-        )
-        self.combination_clear_btn.pack(side="left", padx=(8, 0), pady=10)
-        
-        # 順番操作ボタン
-        self.combination_move_up_btn = ctk.CTkButton(
-            list_btn_frame,
-            text="↑",
-            command=self._move_combination_up,
-            height=30,
-            width=40
-        )
-        self.combination_move_up_btn.pack(side="left", padx=(8, 0), pady=10)
-        
-        self.combination_move_down_btn = ctk.CTkButton(
-            list_btn_frame,
-            text="↓", 
-            command=self._move_combination_down,
-            height=30,
-            width=40
-        )
-        self.combination_move_down_btn.pack(side="left", padx=(4, 0), pady=10)
-        
+        self.combination_select_btn.pack(side="left", padx=(8, 4), pady=6)
+
         self.combination_delete_btn = ctk.CTkButton(
-            list_btn_frame,
-            text="✕",
+            toolbar, text="✕ 選択削除",
             command=self._delete_selected_combination,
-            height=30,
-            width=40,
-            fg_color="red",
-            hover_color="darkred"
+            height=32, width=90,
+            fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
+            hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
+            state="disabled"
         )
-        self.combination_delete_btn.pack(side="left", padx=(4, 0), pady=10)
-        
-        # ファイル数表示
+        self.combination_delete_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.combination_clear_btn = ctk.CTkButton(
+            toolbar, text="🗑️ クリア",
+            command=self._clear_combination_files,
+            height=32, width=70,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER
+        )
+        self.combination_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.combination_move_up_btn = ctk.CTkButton(
+            toolbar, text="↑", command=self._move_combination_up,
+            height=32, width=36,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER
+        )
+        self.combination_move_up_btn.pack(side="left", padx=(0, 2), pady=6)
+
+        self.combination_move_down_btn = ctk.CTkButton(
+            toolbar, text="↓", command=self._move_combination_down,
+            height=32, width=36,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER
+        )
+        self.combination_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
+
         self.combination_count_label = ctk.CTkLabel(
-            list_btn_frame,
-            text="ファイル数: 0",
-            font=ctk.CTkFont(size=12)
+            toolbar, text="ファイル数: 0",
+            font=ctk.CTkFont(size=11), text_color=CLR_GRAY_TEXT
         )
-        self.combination_count_label.pack(side="right", padx=10, pady=10)
+        self.combination_count_label.pack(side="right", padx=10, pady=6)
         
         # ドラッグアンドドロップ対応ファイルリスト
         self.combination_draggable_list = DraggableFileList(
@@ -352,11 +351,9 @@ class UnifiedWindow:
         # 初期メッセージ（空の時に表示）
         self.combination_list_msg = ctk.CTkLabel(
             self.combination_draggable_list,
-            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・ドラッグで順序変更、↑↓ボタンでも調整可能\n\n\n\n\n",
+            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
             font=ctk.CTkFont(size=12),
-            justify="left",
-            fg_color="#E6F7FF",
-            corner_radius=8
+            justify="left"
         )
         self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
@@ -485,68 +482,61 @@ class UnifiedWindow:
         )
         self.preview_label.pack(side="left", padx=(0, 10), pady=10)
 
-        # ボタンフレーム
-        btn_frame = ctk.CTkFrame(self.document_number_tab)
-        btn_frame.pack(fill="x", padx=15, pady=(10, 5))
+        # ── ツールバー ──
+        toolbar = ctk.CTkFrame(self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
+                                border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        toolbar.pack(fill="x", padx=15, pady=(8, 5))
 
-        # ファイル選択ボタン
         self.document_select_btn = ctk.CTkButton(
-            btn_frame,
-            text="📂 PDFファイル選択",
+            toolbar, text="📂 PDFファイル選択",
             command=self._select_document_number_files,
-            height=35,
-            width=140
+            height=32, width=130,
+            fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
+            font=ctk.CTkFont(size=11, weight="bold")
         )
-        self.document_select_btn.pack(side="left", padx=8, pady=10)
-
-        # クリアボタン
-        self.document_clear_btn = ctk.CTkButton(
-            btn_frame,
-            text="🗑️ クリア",
-            command=self._clear_document_number_files,
-            height=35,
-            width=80,
-            state="disabled"
-        )
-        self.document_clear_btn.pack(side="left", padx=(8, 0), pady=10)
-
-        # 順番操作ボタン（結合モードと同じ）
-        self.document_move_up_btn = ctk.CTkButton(
-            btn_frame,
-            text="↑",
-            command=self._move_document_up,
-            height=30,
-            width=40
-        )
-        self.document_move_up_btn.pack(side="left", padx=(8, 0), pady=10)
-
-        self.document_move_down_btn = ctk.CTkButton(
-            btn_frame,
-            text="↓",
-            command=self._move_document_down,
-            height=30,
-            width=40
-        )
-        self.document_move_down_btn.pack(side="left", padx=(4, 0), pady=10)
+        self.document_select_btn.pack(side="left", padx=(8, 4), pady=6)
 
         self.document_delete_btn = ctk.CTkButton(
-            btn_frame,
-            text="✕",
+            toolbar, text="✕ 選択削除",
             command=self._delete_selected_document,
-            height=30,
-            width=40,
-            fg_color="red",
-            hover_color="darkred"
+            height=32, width=90,
+            fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
+            hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
+            state="disabled"
         )
-        self.document_delete_btn.pack(side="left", padx=(4, 0), pady=10)
+        self.document_delete_btn.pack(side="left", padx=(0, 4), pady=6)
 
-        # ファイル数表示
-        self.document_count_label = ctk.CTkLabel(
-            btn_frame,
-            text="ファイル数: 0",
-            font=ctk.CTkFont(size=12)
+        self.document_clear_btn = ctk.CTkButton(
+            toolbar, text="🗑️ クリア",
+            command=self._clear_document_number_files,
+            height=32, width=70,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            state="disabled"
         )
-        self.document_count_label.pack(side="right", padx=10, pady=10)
+        self.document_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.document_move_up_btn = ctk.CTkButton(
+            toolbar, text="↑", command=self._move_document_up,
+            height=32, width=36,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER
+        )
+        self.document_move_up_btn.pack(side="left", padx=(0, 2), pady=6)
+
+        self.document_move_down_btn = ctk.CTkButton(
+            toolbar, text="↓", command=self._move_document_down,
+            height=32, width=36,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER
+        )
+        self.document_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.document_count_label = ctk.CTkLabel(
+            toolbar, text="ファイル数: 0",
+            font=ctk.CTkFont(size=11), text_color=CLR_GRAY_TEXT
+        )
+        self.document_count_label.pack(side="right", padx=10, pady=6)
 
         # ドラッグアンドドロップ対応ファイルリスト
         self.document_draggable_list = DraggableFileList(
@@ -563,11 +553,9 @@ class UnifiedWindow:
         # 初期メッセージ（空の時に表示）
         self.document_list_msg = ctk.CTkLabel(
             self.document_draggable_list,
-            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・フォント: Meiryo、四角囲い文字で表示\n・全ての回転角度（0°, 90°, 180°, 270°）に対応\n・ドラッグで順序変更、↑↓ボタンでも調整可能\n\n\n",
+            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・フォント: Meiryo、四角囲い文字で表示\n・全ての回転角度（0°, 90°, 180°, 270°）に対応\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
             font=ctk.CTkFont(size=12),
-            justify="left",
-            fg_color="#E6F7FF",
-            corner_radius=8
+            justify="left"
         )
         self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
