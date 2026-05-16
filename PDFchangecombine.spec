@@ -9,7 +9,7 @@ a = Analysis(
     ['src/main.py'],
     pathex=['.', 'src'],
     binaries=[],
-    datas=customtkinter_datas + tkinterdnd2_datas,
+    datas=customtkinter_datas + tkinterdnd2_datas + [('assets/icon.png', 'assets')],
     hiddenimports=[
         'customtkinter',
         'tkinterdnd2',
@@ -47,6 +47,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon='assets/icon.ico',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
