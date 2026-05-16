@@ -36,7 +36,9 @@ from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
     CLR_RED_TEXT, CLR_GRAY_TEXT, CLR_DARK_TEXT, CLR_LIST_HEADER,
-    CLR_WHITE, get_file_type_badge
+    CLR_WHITE, get_file_type_badge,
+    FONT_FAMILY,
+    TAB_CONVERSION, TAB_COMBINATION, TAB_DOCUMENT, TAB_INACTIVE,
 )
 from ..utils.error_handler import error_handler, ErrorSeverity
 from ..core.converter import PDFConverter
@@ -112,51 +114,88 @@ class UnifiedWindow:
         """メインUI作成"""
         # メインフレーム
         self.main_frame = ctk.CTkFrame(self.root, fg_color=("gray95", "gray10"))
-        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.main_frame.pack(fill="both", expand=True, padx=8, pady=8)
 
-        # ── ヘッダー（クリーンブルー） ──
+        # ── ヘッダー ──
         header_frame = ctk.CTkFrame(
             self.main_frame, fg_color=CLR_PRIMARY, corner_radius=8
         )
-        header_frame.pack(fill="x", padx=10, pady=(10, 5))
-
-        ctk.CTkLabel(
-            header_frame, text="📄",
-            font=ctk.CTkFont(size=22)
-        ).pack(side="left", padx=(14, 6), pady=10)
+        header_frame.pack(fill="x", padx=8, pady=(8, 4))
 
         ctk.CTkLabel(
             header_frame,
             text="PDF変換・結合ツール",
-            font=ctk.CTkFont(size=18, weight="bold"),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=18, weight="bold"),
             text_color="white"
-        ).pack(side="left", pady=10)
+        ).pack(side="left", padx=16, pady=10)
 
-        self.tab_view = ctk.CTkTabview(
-            self.main_frame,
-            width=530, height=620,
-            text_color=(CLR_DARK_TEXT, CLR_DARK_TEXT),
-            segmented_button_selected_color=CLR_LIGHT_BG,
-            segmented_button_selected_hover_color=CLR_LIGHT_BG,
-            segmented_button_unselected_color=("gray90", "gray25"),
-            segmented_button_unselected_hover_color=(CLR_BORDER, "gray30"),
-            border_color=CLR_BORDER, border_width=1
+        # ── カスタムタブバー ──
+        _TAB_DEFS = [
+            ("PDF変換",   TAB_CONVERSION),
+            ("PDF結合",   TAB_COMBINATION),
+            ("資料NO挿入", TAB_DOCUMENT),
+        ]
+        self._tab_active_colors = {name: colors for name, colors in _TAB_DEFS}
+        self._tab_buttons: dict = {}
+        self._tab_frames: dict = {}
+
+        tab_bar = ctk.CTkFrame(self.main_frame, fg_color="transparent", corner_radius=0)
+        tab_bar.pack(fill="x", padx=8, pady=(0, 0))
+
+        for name, (active, hover) in _TAB_DEFS:
+            btn = ctk.CTkButton(
+                tab_bar, text=name,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+                height=46, corner_radius=0,
+                fg_color=TAB_INACTIVE[0], hover_color=TAB_INACTIVE[1],
+                border_spacing=0,
+                command=lambda n=name: self._switch_tab(n)
+            )
+            btn.pack(side="left", fill="x", expand=True, padx=1, pady=0)
+            self._tab_buttons[name] = btn
+
+        # ── コンテンツエリア ──
+        content_outer = ctk.CTkFrame(
+            self.main_frame, fg_color=CLR_BORDER, corner_radius=0,
+            border_width=0
         )
-        self.tab_view.pack(fill="both", expand=True, padx=10, pady=5)
-        self.tab_view._segmented_button.configure(font=ctk.CTkFont(size=13, weight="bold"))
-        
-        # タブ追加
-        self.conversion_tab = self.tab_view.add("PDF変換")
-        self.combination_tab = self.tab_view.add("PDF結合")
-        self.document_number_tab = self.tab_view.add("資料NO挿入")
+        content_outer.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+        for name, _ in _TAB_DEFS:
+            frame = ctk.CTkFrame(
+                content_outer, fg_color=("gray97", "gray15"),
+                corner_radius=0
+            )
+            frame.pack_forget()
+            self._tab_frames[name] = frame
+
+        self.conversion_tab      = self._tab_frames["PDF変換"]
+        self.combination_tab     = self._tab_frames["PDF結合"]
+        self.document_number_tab = self._tab_frames["資料NO挿入"]
 
         # 各タブのUI作成
         self._create_conversion_ui()
         self._create_combination_ui()
         self._create_document_number_ui()
-        
+
         # 初期タブ選択
-        self.tab_view.set("PDF変換")
+        self._switch_tab("PDF変換")
+
+    def _switch_tab(self, name: str) -> None:
+        """タブ切り替え"""
+        colors = self._tab_active_colors
+        inactive_c, inactive_h = TAB_INACTIVE
+        for n, btn in self._tab_buttons.items():
+            if n == name:
+                active_c, active_h = colors[n]
+                btn.configure(fg_color=active_c, hover_color=active_h)
+            else:
+                btn.configure(fg_color=inactive_c, hover_color=inactive_h)
+        for n, frame in self._tab_frames.items():
+            if n == name:
+                frame.pack(fill="both", expand=True)
+            else:
+                frame.pack_forget()
     
     def _create_conversion_ui(self) -> None:
         """PDF変換タブUI"""
@@ -164,7 +203,7 @@ class UnifiedWindow:
         desc_label = ctk.CTkLabel(
             self.conversion_tab,
             text="Office文書・画像ファイルをPDFに変換します",
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         )
         desc_label.pack(pady=(10, 5))
         
@@ -174,16 +213,16 @@ class UnifiedWindow:
         toolbar.pack(fill="x", padx=15, pady=(8, 5))
 
         self.conversion_select_btn = ctk.CTkButton(
-            toolbar, text="📂 ファイル追加",
+            toolbar, text="ファイル追加",
             command=self._select_conversion_files,
             height=32, width=110,
             fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
-            font=ctk.CTkFont(size=11, weight="bold")
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold")
         )
         self.conversion_select_btn.pack(side="left", padx=(8, 4), pady=6)
 
         self.conversion_delete_btn = ctk.CTkButton(
-            toolbar, text="✕ 選択削除",
+            toolbar, text="選択削除",
             command=self._delete_selected_conversion,
             height=32, width=90,
             fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
@@ -193,7 +232,7 @@ class UnifiedWindow:
         self.conversion_delete_btn.pack(side="left", padx=(0, 4), pady=6)
 
         self.conversion_clear_btn = ctk.CTkButton(
-            toolbar, text="🗑️ 全クリア",
+            toolbar, text="全クリア",
             command=self._clear_all_conversion,
             height=32, width=80,
             fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
@@ -204,7 +243,7 @@ class UnifiedWindow:
 
         self.conversion_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
-            font=ctk.CTkFont(size=11), text_color=CLR_GRAY_TEXT
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=CLR_GRAY_TEXT
         )
         self.conversion_count_label.pack(side="right", padx=10, pady=6)
         
@@ -231,7 +270,7 @@ class UnifiedWindow:
                 "• PDF: .pdf （変換済フォルダにコピー）\n\n"
                 "複数ファイルやフォルダもドロップできます"
             ),
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             justify="left"
         )
         self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
@@ -245,8 +284,8 @@ class UnifiedWindow:
 
         ctk.CTkLabel(
             self.excel_options_frame,
-            text="⚙️ Excelのシートを個別のPDFに分割する",
-            font=ctk.CTkFont(size=11), text_color=CLR_DARK_TEXT
+            text="Excelのシートを個別のPDFに分割する",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=CLR_DARK_TEXT
         ).pack(side="left", padx=(10, 8), pady=6)
 
         self.split_excel_sheets_switch = ctk.CTkSwitch(
@@ -280,7 +319,7 @@ class UnifiedWindow:
         self.conversion_status = ctk.CTkLabel(
             self.conversion_tab,
             text="ファイルを追加してください",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.conversion_status.pack(pady=(0, 10))
     
@@ -290,7 +329,7 @@ class UnifiedWindow:
         desc_label = ctk.CTkLabel(
             self.combination_tab,
             text="複数のPDFファイルを1つに結合します",
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         )
         desc_label.pack(pady=(10, 5))
         
@@ -300,18 +339,18 @@ class UnifiedWindow:
         toolbar.pack(fill="x", padx=15, pady=(8, 5))
 
         self.combination_select_btn = ctk.CTkButton(
-            toolbar, text="📂 PDF追加",
+            toolbar, text="PDF追加",
             command=self._select_combination_files,
-            height=32, width=100,
+            height=32, width=90,
             fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
-            font=ctk.CTkFont(size=11, weight="bold")
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold")
         )
         self.combination_select_btn.pack(side="left", padx=(8, 4), pady=6)
 
         self.combination_delete_btn = ctk.CTkButton(
-            toolbar, text="✕ 選択削除",
+            toolbar, text="選択削除",
             command=self._delete_selected_combination,
-            height=32, width=90,
+            height=32, width=80,
             fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
             hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
             state="disabled"
@@ -319,7 +358,7 @@ class UnifiedWindow:
         self.combination_delete_btn.pack(side="left", padx=(0, 4), pady=6)
 
         self.combination_clear_btn = ctk.CTkButton(
-            toolbar, text="🗑️ クリア",
+            toolbar, text="クリア",
             command=self._clear_combination_files,
             height=32, width=70,
             fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
@@ -346,7 +385,7 @@ class UnifiedWindow:
 
         self.combination_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
-            font=ctk.CTkFont(size=11), text_color=CLR_GRAY_TEXT
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=CLR_GRAY_TEXT
         )
         self.combination_count_label.pack(side="right", padx=10, pady=6)
         
@@ -366,7 +405,7 @@ class UnifiedWindow:
         self.combination_list_msg = ctk.CTkLabel(
             self.combination_draggable_list,
             text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             justify="left"
         )
         self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
@@ -387,7 +426,7 @@ class UnifiedWindow:
 
         ctk.CTkLabel(
             blank_row, text="奇数ページのPDF末尾に白紙ページを挿入する",
-            font=ctk.CTkFont(size=11), text_color=CLR_DARK_TEXT
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=CLR_DARK_TEXT
         ).pack(side="left")
 
         self.add_blank_page_switch = ctk.CTkSwitch(
@@ -402,7 +441,7 @@ class UnifiedWindow:
 
         ctk.CTkLabel(
             page_row, text="フッター中央にページ番号を挿入する",
-            font=ctk.CTkFont(size=11), text_color=CLR_DARK_TEXT
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=CLR_DARK_TEXT
         ).pack(side="left")
 
         self.add_page_number_switch = ctk.CTkSwitch(
@@ -414,7 +453,7 @@ class UnifiedWindow:
 
         # 開始ページ・開始番号（インライン）
         self.start_page_label = ctk.CTkLabel(
-            page_row, text="開始ページ:", font=ctk.CTkFont(size=11)
+            page_row, text="開始ページ:", font=ctk.CTkFont(family=FONT_FAMILY, size=11)
         )
         self.start_page_label.pack(side="right", padx=(8, 2))
 
@@ -425,7 +464,7 @@ class UnifiedWindow:
         self.start_page_entry.pack(side="right")
 
         self.start_number_label = ctk.CTkLabel(
-            page_row, text="開始番号:", font=ctk.CTkFont(size=11)
+            page_row, text="開始番号:", font=ctk.CTkFont(family=FONT_FAMILY, size=11)
         )
         self.start_number_label.pack(side="right", padx=(8, 2))
 
@@ -456,7 +495,7 @@ class UnifiedWindow:
         self.combination_status = ctk.CTkLabel(
             self.combination_tab,
             text="PDFファイルを追加してください",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.combination_status.pack(pady=(0, 10))
 
@@ -466,7 +505,7 @@ class UnifiedWindow:
         desc_label = ctk.CTkLabel(
             self.document_number_tab,
             text="PDFファイルのヘッダー右上に「資料〇」を挿入します",
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         )
         desc_label.pack(pady=(10, 5))
 
@@ -478,7 +517,7 @@ class UnifiedWindow:
         type_label = ctk.CTkLabel(
             numbering_frame,
             text="連番タイプ:",
-            font=ctk.CTkFont(size=14, weight="bold")
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold")
         )
         type_label.pack(side="left", padx=(10, 5), pady=10)
 
@@ -496,7 +535,7 @@ class UnifiedWindow:
         self.number_label = ctk.CTkLabel(
             numbering_frame,
             text="開始番号:",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.number_label.pack(side="left", padx=(10, 5), pady=10)
 
@@ -506,7 +545,7 @@ class UnifiedWindow:
             textvariable=self.number_var,
             placeholder_text="1",
             width=80,
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.number_entry.pack(side="left", padx=(0, 10), pady=10)
 
@@ -517,7 +556,7 @@ class UnifiedWindow:
         self.preview_label = ctk.CTkLabel(
             numbering_frame,
             text="→ 「資料1, 資料2, 資料3...」",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             text_color="gray"
         )
         self.preview_label.pack(side="left", padx=(0, 10), pady=10)
@@ -528,18 +567,18 @@ class UnifiedWindow:
         toolbar.pack(fill="x", padx=15, pady=(8, 5))
 
         self.document_select_btn = ctk.CTkButton(
-            toolbar, text="📂 PDFファイル選択",
+            toolbar, text="PDFファイル選択",
             command=self._select_document_number_files,
-            height=32, width=130,
+            height=32, width=120,
             fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
-            font=ctk.CTkFont(size=11, weight="bold")
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold")
         )
         self.document_select_btn.pack(side="left", padx=(8, 4), pady=6)
 
         self.document_delete_btn = ctk.CTkButton(
-            toolbar, text="✕ 選択削除",
+            toolbar, text="選択削除",
             command=self._delete_selected_document,
-            height=32, width=90,
+            height=32, width=80,
             fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
             hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
             state="disabled"
@@ -547,7 +586,7 @@ class UnifiedWindow:
         self.document_delete_btn.pack(side="left", padx=(0, 4), pady=6)
 
         self.document_clear_btn = ctk.CTkButton(
-            toolbar, text="🗑️ クリア",
+            toolbar, text="クリア",
             command=self._clear_document_number_files,
             height=32, width=70,
             fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
@@ -574,7 +613,7 @@ class UnifiedWindow:
 
         self.document_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
-            font=ctk.CTkFont(size=11), text_color=CLR_GRAY_TEXT
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=CLR_GRAY_TEXT
         )
         self.document_count_label.pack(side="right", padx=10, pady=6)
 
@@ -594,7 +633,7 @@ class UnifiedWindow:
         self.document_list_msg = ctk.CTkLabel(
             self.document_draggable_list,
             text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・フォント: Meiryo、四角囲い文字で表示\n・全ての回転角度（0°, 90°, 180°, 270°）に対応\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             justify="left"
         )
         self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
@@ -618,7 +657,7 @@ class UnifiedWindow:
         self.document_status = ctk.CTkLabel(
             self.document_number_tab,
             text="PDFファイルを追加して資料番号を入力してください",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.document_status.pack(pady=(0, 10))
 
@@ -1458,7 +1497,7 @@ class UnifiedWindow:
         msg_label = ctk.CTkLabel(
             dialog,
             text=f"変換したPDFファイル({len(pdf_files)}個)を\n結合しますか？",
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         )
         msg_label.pack(pady=20)
         

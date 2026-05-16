@@ -9,7 +9,7 @@ import tkinter as tk
 
 from .theme import (
     CLR_LIGHT_BG, CLR_SEL_BORDER, CLR_RED_LIGHT, CLR_RED_TEXT,
-    CLR_GRAY_TEXT, CLR_DARK_TEXT, get_file_type_badge
+    CLR_GRAY_TEXT, CLR_DARK_TEXT, get_file_type_badge, FONT_FAMILY
 )
 
 
@@ -39,7 +39,7 @@ class DraggableListItem(ctk.CTkFrame):
         if self.drag_enabled:
             self.drag_handle = ctk.CTkLabel(
                 self, text="⋮⋮", width=20,
-                font=ctk.CTkFont(size=12),
+                font=ctk.CTkFont(family=FONT_FAMILY, size=12),
                 text_color=(CLR_GRAY_TEXT, CLR_GRAY_TEXT)
             )
             self.drag_handle.pack(side="left", padx=(6, 0), pady=4)
@@ -51,7 +51,7 @@ class DraggableListItem(ctk.CTkFrame):
         if self.on_remove:
             self.remove_btn = ctk.CTkButton(
                 self, text="✕", width=22, height=22,
-                font=ctk.CTkFont(size=10, weight="bold"),
+                font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
                 fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
                 hover_color="#FEB2B2", corner_radius=11,
                 command=self._on_remove_click
@@ -63,7 +63,7 @@ class DraggableListItem(ctk.CTkFrame):
         badge_text, badge_color = get_file_type_badge(self.file_path)
         self.badge_label = ctk.CTkLabel(
             self, text=badge_text,
-            font=ctk.CTkFont(size=9, weight="bold"),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=9, weight="bold"),
             fg_color=badge_color, text_color="white",
             corner_radius=4, width=36, height=18
         )
@@ -76,7 +76,7 @@ class DraggableListItem(ctk.CTkFrame):
         filename = Path(self.file_path).name
         self.filename_label = ctk.CTkLabel(
             self.text_frame, text=filename,
-            anchor="w", font=ctk.CTkFont(size=12),
+            anchor="w", font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             text_color=CLR_DARK_TEXT
         )
         self.filename_label.pack(anchor="w")
@@ -86,7 +86,7 @@ class DraggableListItem(ctk.CTkFrame):
                         else parent_path)
         self.path_label = ctk.CTkLabel(
             self.text_frame, text=display_path,
-            anchor="w", font=ctk.CTkFont(size=9),
+            anchor="w", font=ctk.CTkFont(family=FONT_FAMILY, size=9),
             text_color=CLR_GRAY_TEXT
         )
         self.path_label.pack(anchor="w")
