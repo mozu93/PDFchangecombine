@@ -100,10 +100,11 @@ class UnifiedWindow:
         self.root.title(WINDOW_TITLE)
         self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
-        self._set_window_icon()
+        # CustomTkinter 初期化完了後にアイコンを設定（即時だと上書きされる）
+        self.root.after(200, self._set_window_icon)
         
     def _set_window_icon(self) -> None:
-        """ウィンドウアイコン設定"""
+        """ウィンドウアイコン設定（after() で遅延呼び出し）"""
         try:
             import sys
             from pathlib import Path
@@ -114,12 +115,12 @@ class UnifiedWindow:
             ico = base / "assets" / "icon.ico"
             png = base / "assets" / "icon.png"
             if ico.exists():
-                self.root.iconbitmap(str(ico))
+                self.root.wm_iconbitmap(str(ico))
             elif png.exists():
                 from PIL import Image, ImageTk
-                img = ImageTk.PhotoImage(Image.open(str(png)).resize((64, 64)))
-                self.root.iconphoto(True, img)
-                self.root._icon_ref = img
+                img = ImageTk.PhotoImage(Image.open(str(png)).resize((256, 256)))
+                self.root.wm_iconphoto(True, img)
+                self.root._icon_ref = img  # GC防止
         except Exception as e:
             logger.debug(f"アイコン設定スキップ: {e}")
 

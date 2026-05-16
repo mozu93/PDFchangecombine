@@ -10,7 +10,10 @@ a = Analysis(
     ['src/main.py'],
     pathex=['.', 'src'],
     binaries=[],
-    datas=customtkinter_datas + tkinterdnd2_datas + certifi_datas + [('assets/icon.png', 'assets')],
+    datas=customtkinter_datas + tkinterdnd2_datas + certifi_datas + [
+        ('assets/icon.ico', 'assets'),
+        ('assets/icon.png', 'assets'),
+    ],
     hiddenimports=[
         'customtkinter',
         'tkinterdnd2',

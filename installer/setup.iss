@@ -1,6 +1,6 @@
 [Setup]
 AppName=PDF変換・結合ツール
-AppVersion=1.11.4
+AppVersion=1.11.5
 AppPublisher=mozu93
 AppPublisherURL=https://github.com/mozu93/PDFchangecombine
 AppSupportURL=https://github.com/mozu93/PDFchangecombine/issues
@@ -10,6 +10,8 @@ DefaultGroupName=PDF変換・結合ツール
 AllowNoIcons=yes
 OutputDir=..\dist\installer
 OutputBaseFilename=PDFConverter-setup
+SetupIconFile=..\assets\icon.ico
+UninstallDisplayIcon={app}\PDFConverter.exe
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
