@@ -683,28 +683,6 @@ class UnifiedWindow:
         except Exception as e:
             logger.warning(f"代替ドラッグ&ドロップ設定失敗: {e}")
     
-    def _add_drop_hints(self) -> None:
-        """ドロップヒント表示"""
-        # 変換タブにヒント表示
-        conversion_hint = """📁 対応ファイル形式:
-        
-• Word文書 (.docx, .doc)
-• Excel文書 (.xlsx, .xls)  
-• PowerPoint文書 (.pptx, .ppt)
-• 画像ファイル (.jpg, .png, .bmp, .gif, .tiff)
-
-ファイル選択ボタンでファイルを追加してください"""
-        
-        # 結合タブにヒント表示
-        combination_hint = """📋 PDFファイル結合:
-        
-• PDFファイルのみ対応 (.pdf)
-• ファイルの順序が結合順序になります
-• 複数ファイルの一括追加に対応
-
-ファイル選択ボタンでPDFを追加してください"""
-    
-    
     def _add_conversion_files(self, paths: List[str]) -> None:
         """変換ファイル追加"""
         scan_result = FileScanner.scan_files_from_paths(paths)
@@ -964,36 +942,6 @@ class UnifiedWindow:
         except Exception as e:
             logger.error(f"ファイル削除中にエラーが発生: {str(e)}")
             self.document_status.configure(text="削除中にエラーが発生しました")
-
-    def _refresh_document_checkboxes(self) -> None:
-        """資料NO挿入ファイルのチェックボックス表示順を更新（結合モードと同じ）"""
-        try:
-            # 全てのチェックボックスを一時的に削除
-            checkbox_states = {}
-            for file_path, checkbox in self.document_number_checkboxes.items():
-                checkbox_states[file_path] = checkbox.get()  # 状態を保存
-                checkbox.destroy()
-
-            self.document_number_checkboxes.clear()
-
-            # ファイルリストの順序に従って再作成
-            for file_path in self.document_number_files:
-                filename = Path(file_path).name
-                checkbox = ctk.CTkCheckBox(
-                    self.document_list_frame,
-                    text=filename,
-                    font=ctk.CTkFont(size=13)
-                )
-                checkbox.pack(anchor="w", pady=2, padx=10)
-
-                # 以前の状態を復元
-                if file_path in checkbox_states and checkbox_states[file_path]:
-                    checkbox.select()
-
-                self.document_number_checkboxes[file_path] = checkbox
-
-        except Exception as e:
-            logger.error(f"チェックボックス更新中にエラーが発生: {str(e)}")
 
     def _on_numbering_type_changed(self, value: str) -> None:
         """連番タイプ変更時の処理"""
@@ -1364,36 +1312,6 @@ class UnifiedWindow:
         except Exception as e:
             logger.error(f"ファイル削除中にエラーが発生: {str(e)}")
             self.combination_status.configure(text="削除中にエラーが発生しました")
-    
-    def _refresh_combination_checkboxes(self) -> None:
-        """PDFファイルのチェックボックス表示順を更新"""
-        try:
-            # 全てのチェックボックスを一時的に削除
-            checkbox_states = {}
-            for file_path, checkbox in self.combination_checkboxes.items():
-                checkbox_states[file_path] = checkbox.get()  # 状態を保存
-                checkbox.destroy()
-            
-            self.combination_checkboxes.clear()
-            
-            # ファイルリストの順序に従って再作成
-            for file_path in self.combination_files:
-                filename = Path(file_path).name
-                checkbox = ctk.CTkCheckBox(
-                    self.combination_list_frame,
-                    text=filename,
-                    font=ctk.CTkFont(size=11)
-                )
-                checkbox.pack(anchor="w", pady=2, padx=10)
-                
-                # 以前の状態を復元
-                if file_path in checkbox_states and checkbox_states[file_path]:
-                    checkbox.select()
-                    
-                self.combination_checkboxes[file_path] = checkbox
-            
-        except Exception as e:
-            logger.error(f"チェックボックス更新中にエラーが発生: {str(e)}")
     
     def _delete_selected_conversion(self) -> None:
         """選択中の変換ファイルを削除"""
