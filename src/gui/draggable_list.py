@@ -175,19 +175,14 @@ class DraggableListItem(ctk.CTkFrame):
 class DraggableFileList(ctk.CTkScrollableFrame):
     """ドラッグアンドドロップ対応のファイルリスト"""
 
-    def __init__(self, parent, **kwargs):
-        # 薄い水色の背景色を設定
+    def __init__(self, parent, drag_enabled: bool = True, **kwargs):
         if 'fg_color' not in kwargs:
-            kwargs['fg_color'] = ("#E6F7FF", "#E6F7FF")  # ライトモード/ダークモード共通: 薄い水色
+            kwargs['fg_color'] = ("white", "white")
         super().__init__(parent, **kwargs)
-
-        # 内部フレームとキャンバスの背景色も設定
-        self.configure(fg_color=("#E6F7FF", "#E6F7FF"))
-
-        # CTkScrollableFrameの内部構造にアクセスして背景色を設定
-        # after_idle で確実に初期化後に設定
+        self.configure(fg_color=("white", "white"))
         self.after(1, self._set_background_colors)
 
+        self.drag_enabled = drag_enabled
         self.file_paths: List[str] = []
         self.items: Dict[str, DraggableListItem] = {}
         self.selected_files: List[str] = []
@@ -202,14 +197,13 @@ class DraggableFileList(ctk.CTkScrollableFrame):
         self.on_order_change: Optional[Callable] = None
 
     def _set_background_colors(self):
-        """内部キャンバスとフレームの背景色を設定"""
         try:
             if hasattr(self, '_parent_canvas'):
-                self._parent_canvas.configure(bg="#E6F7FF")
+                self._parent_canvas.configure(bg="white")
             if hasattr(self, '_parent_frame'):
-                self._parent_frame.configure(fg_color="#E6F7FF")
-        except Exception as e:
-            pass  # エラーは無視
+                self._parent_frame.configure(fg_color="white")
+        except Exception:
+            pass
 
     def add_file(self, file_path: str):
         """ファイルを追加"""
@@ -272,7 +266,9 @@ class DraggableFileList(ctk.CTkScrollableFrame):
             file_path,
             on_select=self._on_item_select,
             on_drag_start=self._on_drag_start,
-            height=35
+            on_remove=self.remove_file,
+            drag_enabled=self.drag_enabled,
+            height=44
         )
         self.items[file_path] = item
 
