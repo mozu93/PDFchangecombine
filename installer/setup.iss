@@ -1,6 +1,6 @@
 [Setup]
 AppName=PDF変換・結合ツール
-AppVersion=1.11.2
+AppVersion=1.11.3
 AppPublisher=mozu93
 AppPublisherURL=https://github.com/mozu93/PDFchangecombine
 AppSupportURL=https://github.com/mozu93/PDFchangecombine/issues
