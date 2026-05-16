@@ -36,7 +36,8 @@ jobs:
             xlrd `
             python-pptx `
             pywin32 `
-            packaging
+            packaging `
+            certifi
 
       - name: Build executable
         run: pyinstaller PDFchangecombine.spec

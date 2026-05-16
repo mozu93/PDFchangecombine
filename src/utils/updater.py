@@ -3,6 +3,7 @@ GitHub Releases を使ったアップデートチェック機能
 """
 
 import json
+import ssl
 import urllib.request
 from typing import Optional
 
@@ -20,6 +21,23 @@ def is_newer_version(current: str, latest: str) -> bool:
         return False
 
 
+def _make_ssl_context() -> ssl.SSLContext:
+    """PyInstaller 環境でも動く SSL コンテキストを返す"""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+    try:
+        ctx = ssl.create_default_context()
+        return ctx
+    except Exception:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+
 def check_latest_version() -> Optional[dict]:
     """GitHub API から最新リリース情報を取得。失敗時は None を返す"""
     try:
@@ -30,7 +48,8 @@ def check_latest_version() -> Optional[dict]:
                 "User-Agent": "PDFchangecombine-updater",
             },
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        ctx = _make_ssl_context()
+        with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:
             data = json.loads(resp.read().decode())
             return {
                 "tag_name": data.get("tag_name", ""),

@@ -4,12 +4,13 @@ from PyInstaller.utils.hooks import collect_data_files
 
 customtkinter_datas = collect_data_files('customtkinter')
 tkinterdnd2_datas   = collect_data_files('tkinterdnd2')
+certifi_datas       = collect_data_files('certifi')
 
 a = Analysis(
     ['src/main.py'],
     pathex=['.', 'src'],
     binaries=[],
-    datas=customtkinter_datas + tkinterdnd2_datas + [('assets/icon.png', 'assets')],
+    datas=customtkinter_datas + tkinterdnd2_datas + certifi_datas + [('assets/icon.png', 'assets')],
     hiddenimports=[
         'customtkinter',
         'tkinterdnd2',
@@ -26,6 +27,7 @@ a = Analysis(
         'pptx',
         'packaging',
         'packaging.version',
+        'certifi',
     ],
     hookspath=[],
     hooksconfig={},

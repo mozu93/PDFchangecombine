@@ -16,11 +16,12 @@ from ..utils.updater import check_latest_version, is_newer_version
 class UpdateBanner(ctk.CTkFrame):
     """新バージョン検出時のみ表示される通知バナー"""
 
-    _BG    = "#FEF9C3"
+    _BG     = "#FEF9C3"
     _BORDER = "#FDE047"
-    _TEXT  = "#713F12"
-    _BTN   = "#1565C0"
-    _BTN_H = "#1976D2"
+    _TEXT   = "#713F12"
+    _BTN    = "#1565C0"
+    _BTN_H  = "#1976D2"
+    _HEIGHT = 40
 
     def __init__(self, parent, **kwargs):
         super().__init__(
@@ -29,19 +30,21 @@ class UpdateBanner(ctk.CTkFrame):
             border_color=self._BORDER,
             border_width=1,
             corner_radius=0,
-            height=40,
+            height=0,       # 初期は高さ0で非表示
             **kwargs,
         )
+        self.pack_propagate(False)
         self._release_url: Optional[str] = None
+        self._visible = False
         self._build_widgets()
+        # 最上部に pack しておく（高さ0なので見えない）
+        self.pack(fill="x")
         # バックグラウンドでバージョンチェック開始
         threading.Thread(target=self._check, daemon=True).start()
 
     # ── UI構築 ──────────────────────────────────────────────────
 
     def _build_widgets(self):
-        self.pack_propagate(False)
-
         self._msg = ctk.CTkLabel(
             self,
             text="",
@@ -76,9 +79,6 @@ class UpdateBanner(ctk.CTkFrame):
         )
         self._close_btn.pack(side="right", padx=10, pady=6)
 
-        # 初期は非表示
-        self.pack_forget()
-
     # ── バージョンチェック ───────────────────────────────────────
 
     def _check(self):
@@ -94,20 +94,17 @@ class UpdateBanner(ctk.CTkFrame):
     # ── 表示 / 非表示 ────────────────────────────────────────────
 
     def _show(self, tag: str):
-        """メインスレッドでバナーを最上部に挿入"""
+        """高さを40pxに変えてバナーを表示（先頭に pack 済みのため位置は変わらない）"""
         self._msg.configure(
             text=f"新しいバージョン {tag} があります  （現在: v{APP_VERSION}）"
         )
-        # 兄弟ウィジェットの先頭に before= で挿入
-        siblings = [w for w in self.master.winfo_children() if w is not self]
-        if siblings:
-            self.pack(fill="x", before=siblings[0])
-        else:
-            self.pack(fill="x")
+        self.configure(height=self._HEIGHT)
+        self._visible = True
 
     def _open_release(self):
         if self._release_url:
             webbrowser.open(self._release_url)
 
     def _dismiss(self):
-        self.pack_forget()
+        self.configure(height=0)
+        self._visible = False
