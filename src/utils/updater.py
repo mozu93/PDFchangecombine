@@ -30,7 +30,7 @@ def _make_ssl_context() -> ssl.SSLContext:
     try:
         import certifi
         return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
+    except Exception:  # ImportError / FileNotFoundError 等を全て補足
         pass
     try:
         return ssl.create_default_context()

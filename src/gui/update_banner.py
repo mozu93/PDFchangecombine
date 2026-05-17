@@ -131,32 +131,37 @@ class UpdateBanner(ctk.CTkFrame):
     # ── バージョンチェック ───────────────────────────────────────
 
     def _check(self):
-        info = check_latest_version()
-        if info is None:
-            return
-        tag = info.get("tag_name", "")
-        if not is_newer_version(APP_VERSION, tag):
-            return
+        try:
+            info = check_latest_version()
+            if info is None:
+                return
+            tag = info.get("tag_name", "")
+            if not is_newer_version(APP_VERSION, tag):
+                return
 
-        self._download_url = info.get("download_url", "")
-        html_url = info.get("html_url", "")
+            self._download_url = info.get("download_url", "")
+            html_url = info.get("html_url", "")
 
-        def show():
-            self._msg.configure(
-                text=f"新しいバージョン {tag} があります  （現在: v{APP_VERSION}）"
-            )
-            if self._download_url:
-                self._set_state("found")
-            else:
-                # アセットなし → GitHub を開くボタンに置き換え
-                self._dl_btn.configure(
-                    text="GitHubで確認",
-                    command=lambda: webbrowser.open(html_url),
-                )
-                self._set_state("found")
-            self.configure(height=self._HEIGHT)
+            def show():
+                try:
+                    self._msg.configure(
+                        text=f"新しいバージョン {tag} があります  （現在: v{APP_VERSION}）"
+                    )
+                    if self._download_url:
+                        self._set_state("found")
+                    else:
+                        self._dl_btn.configure(
+                            text="GitHubで確認",
+                            command=lambda: webbrowser.open(html_url),
+                        )
+                        self._set_state("found")
+                    self.configure(height=self._HEIGHT)
+                except Exception:
+                    pass
 
-        self.after(0, show)
+            self.after(0, show)
+        except Exception:
+            pass
 
     # ── ダウンロード ─────────────────────────────────────────────
 
