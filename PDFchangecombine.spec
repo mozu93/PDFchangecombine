@@ -33,7 +33,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['matplotlib', 'numpy', 'pandas', 'pytest', 'weasyprint'],
+    excludes=['matplotlib', 'numpy', 'pandas', 'pytest', 'weasyprint', 'certifi'],
     noarchive=False,
 )
 

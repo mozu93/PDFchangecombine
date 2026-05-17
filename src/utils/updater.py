@@ -49,8 +49,23 @@ def check_latest_version() -> Optional[dict]:
             "html_url": data.get("html_url", GITHUB_RELEASES_URL),
             "download_url": download_url,
         }
-    except Exception:
+    except Exception as e:
+        _log_error(f"check_latest_version failed: {type(e).__name__}: {e}")
         return None
+
+
+def _log_error(msg: str) -> None:
+    """アップデートエラーをログファイルに記録する（診断用）"""
+    try:
+        import datetime
+        log_dir = os.path.join(os.environ.get("APPDATA", ""), "PDF変換・結合ツール", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "update_check.log")
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {msg}\n")
+    except Exception:
+        pass
 
 
 def download_new_installer(
