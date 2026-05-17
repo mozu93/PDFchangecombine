@@ -159,7 +159,8 @@ def render_page_number_preview(
             is_a3l = pw > ph and pw > 1100
             is_lb  = (pw > ph and pw <= 1100) or (ph > pw and ph > 1000)
             if binding_compat and is_a3l:
-                x = (pw / 2 - tw) / 2
+                # A3横 Z折り（片袖折り）: 右端から37mm
+                x = pw - (37 * 72 / 25.4) - tw
                 y = ph - margin - font_size
             elif binding_compat and is_lb:
                 x = margin

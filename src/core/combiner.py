@@ -188,8 +188,9 @@ class PDFCombiner:
                             (page_height > page_width and page_height > 1000)
                         )
                         if page_number_binding_compat and is_a3_landscape:
-                            # A3横 Z折り: 左半分の中央下
-                            x = (page_width / 2 - text_width) / 2
+                            # A3横 Z折り（片袖折り）: 右端から37mm
+                            # Z折り時は右半分が表面になるため、右寄せで配置
+                            x = page_width - (37 * 72 / 25.4) - text_width
                             y = page_height - 28.35
                             rotate_param = 0
                         elif page_number_binding_compat and is_left_binding:
