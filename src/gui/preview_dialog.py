@@ -1,20 +1,26 @@
 """
 PDFプレビューダイアログ - 資料番号・ページ番号の挿入位置をプレビュー
+ズーム（＋／－ボタン・マウスホイール）、ドラッグパン対応
 """
 
 import threading
+import tkinter as tk
 from pathlib import Path
 from typing import Callable, Optional
 
 import fitz
 import customtkinter as ctk
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from .theme import FONT_FAMILY, CLR_PRIMARY, CLR_ACCENT
 
 _RENDER_SCALE = 1.5
-_MAX_W = 740
-_MAX_H = 540
+_CANVAS_W = 740
+_CANVAS_H = 540
+
+# ズームステップ（フィット比率に対する倍率）
+_ZOOM_STEPS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
+_FIT_IDX = 3   # _ZOOM_STEPS[3] == 1.0 がフィット
 
 
 def _load_jp_font(size_px: int) -> ImageFont.FreeTypeFont:
@@ -30,14 +36,6 @@ def _load_jp_font(size_px: int) -> ImageFont.FreeTypeFont:
             except Exception:
                 continue
     return ImageFont.load_default()
-
-
-def _fit(img: Image.Image) -> Image.Image:
-    w, h = img.size
-    ratio = min(_MAX_W / w, _MAX_H / h, 1.0)
-    if ratio < 1.0:
-        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
-    return img
 
 
 def _paste_rotated_text(img: Image.Image, text: str, font: ImageFont.FreeTypeFont,
@@ -79,7 +77,7 @@ def render_doc_number_preview(
     document_text: str,
     a3_portrait_compat: bool,
 ) -> Optional[Image.Image]:
-    """資料番号挿入位置のプレビュー画像を生成する"""
+    """資料番号挿入位置のプレビュー画像を生成する（フルサイズで返す）"""
     try:
         with fitz.open(pdf_path) as doc:
             if not doc:
@@ -113,7 +111,7 @@ def render_doc_number_preview(
             x, y = margin, margin
         elif orig_rot == 180:
             x, y = margin, ph - margin - font_size
-        else:  # 270 or other
+        else:
             x = pw - margin - font_size
             y = ph - margin - tw
 
@@ -126,7 +124,7 @@ def render_doc_number_preview(
         else:
             _paste_normal_text(img, document_text, font, x, y, tw, font_size, hi, col)
 
-        return _fit(img.convert("RGB"))
+        return img.convert("RGB")
     except Exception:
         return None
 
@@ -139,7 +137,7 @@ def render_page_number_preview(
     page_number_text: str,
     binding_compat: bool,
 ) -> Optional[Image.Image]:
-    """ページ番号挿入位置のプレビュー画像を生成する"""
+    """ページ番号挿入位置のプレビュー画像を生成する（フルサイズで返す）"""
     try:
         with fitz.open(pdf_path) as doc:
             if not doc:
@@ -161,16 +159,13 @@ def render_page_number_preview(
             is_a3l = pw > ph and pw > 1100
             is_lb  = (pw > ph and pw <= 1100) or (ph > pw and ph > 1000)
             if binding_compat and is_a3l:
-                # A3横 Z折り: 左半分の中央下
                 x = (pw / 2 - tw) / 2
                 y = ph - margin - font_size
             elif binding_compat and is_lb:
-                # A4横・A3縦 左綴じ: 左端中央、90°CW 回転
                 x = margin
                 y = (ph - tw) / 2
                 rotate_text = True
             else:
-                # 通常: 下部中央
                 x = (pw - tw) / 2
                 y = ph - margin - font_size
         else:
@@ -186,7 +181,7 @@ def render_page_number_preview(
         else:
             _paste_normal_text(img, page_number_text, font, x, y, tw, font_size, hi, col)
 
-        return _fit(img.convert("RGB"))
+        return img.convert("RGB")
     except Exception:
         return None
 
@@ -195,26 +190,91 @@ def render_page_number_preview(
 
 
 class PDFPreviewDialog(ctk.CTkToplevel):
-    """PDF 挿入位置プレビューダイアログ"""
+    """PDF 挿入位置プレビューダイアログ（ズーム・パン対応）"""
 
     def __init__(self, parent, title: str,
                  render_fn: Callable[[], Optional[Image.Image]]):
         super().__init__(parent)
         self.title(title)
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.transient(parent)
         self.grab_set()
 
-        self._frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._frame.pack(padx=12, pady=(12, 0), fill="both", expand=True)
+        self._orig_img: Optional[Image.Image] = None
+        self._tk_img: Optional[ImageTk.PhotoImage] = None
+        self._zoom_idx: int = _FIT_IDX
+        self._fit_scale: float = 1.0
 
-        self._loading = ctk.CTkLabel(
-            self._frame,
-            text="プレビューを生成中...",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        # ── ズームツールバー ──────────────────────────────────────
+        tb = ctk.CTkFrame(self, fg_color="transparent")
+        tb.pack(fill="x", padx=12, pady=(12, 4))
+
+        self._btn_zout = ctk.CTkButton(
+            tb, text="－", width=36, height=28,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=15, weight="bold"),
+            command=self._zoom_out, state="disabled"
         )
-        self._loading.pack(padx=80, pady=60)
+        self._btn_zout.pack(side="left", padx=(0, 2))
 
+        self._zoom_lbl = ctk.CTkLabel(
+            tb, text="読込中...", width=80,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
+        )
+        self._zoom_lbl.pack(side="left", padx=4)
+
+        self._btn_zin = ctk.CTkButton(
+            tb, text="＋", width=36, height=28,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=15, weight="bold"),
+            command=self._zoom_in, state="disabled"
+        )
+        self._btn_zin.pack(side="left", padx=(2, 10))
+
+        self._btn_fit = ctk.CTkButton(
+            tb, text="フィット", width=72, height=28,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            command=self._zoom_fit, state="disabled"
+        )
+        self._btn_fit.pack(side="left")
+
+        ctk.CTkLabel(
+            tb, text="マウスホイールでズーム / ドラッグでスクロール",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color="gray"
+        ).pack(side="right", padx=8)
+
+        # ── キャンバス + スクロールバー ───────────────────────────
+        cf = tk.Frame(self, bg="#444444")
+        cf.pack(fill="both", expand=True, padx=12, pady=0)
+
+        self._sb_y = tk.Scrollbar(cf, orient="vertical")
+        self._sb_x = tk.Scrollbar(cf, orient="horizontal")
+        self._canvas = tk.Canvas(
+            cf, bg="#606060", cursor="fleur",
+            width=_CANVAS_W, height=_CANVAS_H,
+            highlightthickness=0,
+            yscrollcommand=self._sb_y.set,
+            xscrollcommand=self._sb_x.set,
+        )
+        self._sb_y.config(command=self._canvas.yview)
+        self._sb_x.config(command=self._canvas.xview)
+
+        self._sb_y.pack(side="right", fill="y")
+        self._sb_x.pack(side="bottom", fill="x")
+        self._canvas.pack(side="left", fill="both", expand=True)
+
+        # 読み込み中テキスト
+        self._loading_id = self._canvas.create_text(
+            _CANVAS_W // 2, _CANVAS_H // 2,
+            text="プレビューを生成中...",
+            font=(FONT_FAMILY, 14), fill="white"
+        )
+
+        # マウス操作バインド
+        self._canvas.bind("<ButtonPress-1>", self._drag_start)
+        self._canvas.bind("<B1-Motion>", self._drag_move)
+        self._canvas.bind("<MouseWheel>", self._on_wheel)
+
+        # ── 閉じるボタン ──────────────────────────────────────────
         ctk.CTkButton(
             self, text="閉じる", width=100,
             fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
@@ -223,26 +283,95 @@ class PDFPreviewDialog(ctk.CTkToplevel):
 
         # ウィンドウを親の中央付近に配置
         self.update_idletasks()
-        px = parent.winfo_x() + (parent.winfo_width() - 800) // 2
-        py = parent.winfo_y() + (parent.winfo_height() - 650) // 2
-        self.geometry(f"+{max(0, px)}+{max(0, py)}")
+        w = _CANVAS_W + 32
+        h = _CANVAS_H + 140
+        px = parent.winfo_x() + (parent.winfo_width() - w) // 2
+        py = parent.winfo_y() + (parent.winfo_height() - h) // 2
+        self.geometry(f"{w}x{h}+{max(0, px)}+{max(0, py)}")
 
-        self._ctk_img = None
         threading.Thread(target=self._render, args=(render_fn,), daemon=True).start()
+
+    # ── レンダリング ──────────────────────────────────────────────
 
     def _render(self, fn: Callable):
         img = fn()
         self.after(0, lambda: self._display(img))
 
     def _display(self, img: Optional[Image.Image]) -> None:
-        self._loading.pack_forget()
+        self._canvas.delete(self._loading_id)
         if img is None:
-            ctk.CTkLabel(
-                self._frame,
+            self._canvas.create_text(
+                _CANVAS_W // 2, _CANVAS_H // 2,
                 text="プレビューを生成できませんでした",
-                text_color="red",
-                font=ctk.CTkFont(family=FONT_FAMILY, size=13)
-            ).pack(padx=40, pady=30)
+                font=(FONT_FAMILY, 13), fill="red"
+            )
             return
-        self._ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
-        ctk.CTkLabel(self._frame, image=self._ctk_img, text="").pack()
+
+        self._orig_img = img
+        w, h = img.size
+        cw = self._canvas.winfo_width() or _CANVAS_W
+        ch = self._canvas.winfo_height() or _CANVAS_H
+        self._fit_scale = min(cw / w, ch / h, 1.0)
+        self._zoom_idx = _FIT_IDX
+
+        for btn in (self._btn_zout, self._btn_zin, self._btn_fit):
+            btn.configure(state="normal")
+
+        self._apply_zoom()
+
+    # ── ズーム ────────────────────────────────────────────────────
+
+    def _apply_zoom(self):
+        if self._orig_img is None:
+            return
+        scale = self._fit_scale * _ZOOM_STEPS[self._zoom_idx]
+        w = max(1, int(self._orig_img.width * scale))
+        h = max(1, int(self._orig_img.height * scale))
+
+        resized = self._orig_img.resize((w, h), Image.LANCZOS)
+        self._tk_img = ImageTk.PhotoImage(resized)
+
+        self._canvas.delete("img")
+        self._canvas.create_image(0, 0, anchor="nw", image=self._tk_img, tags="img")
+        self._canvas.configure(scrollregion=(0, 0, w, h))
+
+        step = _ZOOM_STEPS[self._zoom_idx]
+        self._zoom_lbl.configure(
+            text="フィット" if step == 1.0 else f"{int(step * 100)}%"
+        )
+        self._btn_zout.configure(
+            state="normal" if self._zoom_idx > 0 else "disabled"
+        )
+        self._btn_zin.configure(
+            state="normal" if self._zoom_idx < len(_ZOOM_STEPS) - 1 else "disabled"
+        )
+
+    def _zoom_in(self):
+        if self._zoom_idx < len(_ZOOM_STEPS) - 1:
+            self._zoom_idx += 1
+            self._apply_zoom()
+
+    def _zoom_out(self):
+        if self._zoom_idx > 0:
+            self._zoom_idx -= 1
+            self._apply_zoom()
+
+    def _zoom_fit(self):
+        self._zoom_idx = _FIT_IDX
+        self._apply_zoom()
+
+    # ── ドラッグパン ──────────────────────────────────────────────
+
+    def _drag_start(self, event):
+        self._canvas.scan_mark(event.x, event.y)
+
+    def _drag_move(self, event):
+        self._canvas.scan_dragto(event.x, event.y, gain=1)
+
+    # ── マウスホイールズーム ──────────────────────────────────────
+
+    def _on_wheel(self, event):
+        if event.delta > 0:
+            self._zoom_in()
+        else:
+            self._zoom_out()
