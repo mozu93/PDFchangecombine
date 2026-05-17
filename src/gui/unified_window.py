@@ -633,12 +633,24 @@ class UnifiedWindow:
 
         # 行3: ファイル名変更オプション
         row3 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row3.pack(fill="x", padx=8, pady=(0, 8))
+        row3.pack(fill="x", padx=8, pady=(0, 4))
 
         self.rename_file_var = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(
             row3, text="ファイル名の先頭に資料番号を追加する（例: 【資料１】ファイル名.pdf）",
             variable=self.rename_file_var,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_PRIMARY
+        ).pack(side="left")
+
+        # 行4: A3縦ページ左綴じ対応オプション
+        row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row4.pack(fill="x", padx=8, pady=(0, 8))
+
+        self.a3_compat_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            row4, text="A3縦ページを左綴じ対応位置（右下）に挿入",
+            variable=self.a3_compat_var,
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
             progress_color=CLR_PRIMARY
         ).pack(side="left")
@@ -1244,7 +1256,8 @@ class UnifiedWindow:
 
             # 別スレッドで処理実行
             rename_file = self.rename_file_var.get()
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file))
+            a3_compat = self.a3_compat_var.get()
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat))
             thread.daemon = True
             thread.start()
 
@@ -1256,7 +1269,7 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False) -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False) -> None:
         """挿入実行（別スレッド）"""
         try:
             def progress_callback(message, progress):
@@ -1271,6 +1284,7 @@ class UnifiedWindow:
                     document_number=number_value,
                     document_prefix=prefix,
                     rename_file=rename_file,
+                    a3_portrait_compat=a3_portrait_compat,
                     progress_callback=progress_callback
                 )
             else:
@@ -1295,6 +1309,7 @@ class UnifiedWindow:
                     prefix_number=prefix_number,
                     document_prefix=prefix,
                     rename_file=rename_file,
+                    a3_portrait_compat=a3_portrait_compat,
                     progress_callback=progress_callback
                 )
 

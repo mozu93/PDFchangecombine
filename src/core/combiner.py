@@ -405,6 +405,7 @@ class PDFCombiner:
     def add_document_numbers(self, pdf_paths: List[str], output_path: str,
                            document_number: str, document_prefix: str = "資料",
                            rename_file: bool = False,
+                           a3_portrait_compat: bool = False,
                            progress_callback: Optional[callable] = None) -> CombineResult:
         """
         PDFファイルに資料NO挿入（各ファイル個別処理・元ファイル同名保存）
@@ -446,7 +447,7 @@ class PDFCombiner:
                         progress_callback(f"処理中: {Path(pdf_path).name}", progress)
 
                     # 元ファイルのバックアップと資料NO挿入
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -493,6 +494,7 @@ class PDFCombiner:
                                       numbering_type: str = "basic", start_number: int = 1,
                                       prefix_number: str = "1", document_prefix: str = "資料",
                                       rename_file: bool = False,
+                                      a3_portrait_compat: bool = False,
                                       progress_callback: Optional[callable] = None) -> CombineResult:
         """
         複数PDFファイルに連番で資料NO挿入
@@ -574,7 +576,7 @@ class PDFCombiner:
                     logger.info(f"ファイル処理開始: {Path(pdf_path).name} → {document_number}")
 
                     # 資料NO挿入実行
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -673,7 +675,7 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False) -> bool:
+    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False) -> bool:
         """
         単一PDFファイルに資料NO挿入（元ファイルバックアップ付き）
 
@@ -730,11 +732,21 @@ class PDFCombiner:
                 ascii_chars = len(document_text) - japanese_chars
                 text_width = japanese_chars * font_size + ascii_chars * (font_size * 0.6)
 
+                # A3縦（portrait）検出: 高さ>1000pt かつ 縦長かつ回転なし
+                is_a3_portrait = (original_rotation == 0
+                                  and page_height > 1000
+                                  and page_height > page_width)
+
                 # 座標計算（右上配置、回転対応）
                 margin = 28.35  # 10mm
                 if original_rotation == 0:
                     x = page_width - text_width - margin
-                    y = margin + font_size
+                    if a3_portrait_compat and is_a3_portrait:
+                        # A3縦+左綴じ対応: 右下に挿入（左綴じで90°回転後に右上になる）
+                        y = page_height - margin - font_size
+                        logger.info(f"A3縦検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
+                    else:
+                        y = margin + font_size
                     rotate_param = 0
                 elif original_rotation == 90:
                     x = margin
