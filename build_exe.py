@@ -160,12 +160,12 @@ VSVersionInfo(
       StringTable(u'040904B0', [
         StringStruct(u'CompanyName', u'PDF Tools'),
         StringStruct(u'FileDescription', u'PDF変換・結合ツール'),
-        StringStruct(u'FileVersion', u'1.0.0'),
+        StringStruct(u'FileVersion', u'1.14.0'),
         StringStruct(u'InternalName', u'PDFConverter'),
         StringStruct(u'LegalCopyright', u'© 2025 PDF Tools'),
         StringStruct(u'OriginalFilename', u'PDFConverter.exe'),
         StringStruct(u'ProductName', u'PDF変換・結合ツール'),
-        StringStruct(u'ProductVersion', u'1.0.0')
+        StringStruct(u'ProductVersion', u'1.14.0')
       ])
     ]), 
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
