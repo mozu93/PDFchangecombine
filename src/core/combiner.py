@@ -732,19 +732,28 @@ class PDFCombiner:
                 ascii_chars = len(document_text) - japanese_chars
                 text_width = japanese_chars * font_size + ascii_chars * (font_size * 0.6)
 
-                # A3縦（portrait）検出: 高さ>1000pt かつ 縦長かつ回転なし
+                # 左綴じ対応が必要なページ検出（rotation=0のみ）
+                # A3縦: 高さ>1000pt かつ 縦長
                 is_a3_portrait = (original_rotation == 0
                                   and page_height > 1000
                                   and page_height > page_width)
+                # A4横: 横長 かつ A4相当サイズ（A3横=幅約1190ptを除外するため幅<950pt）
+                is_a4_landscape = (original_rotation == 0
+                                   and page_width > page_height
+                                   and page_width < 950)
+                needs_bottom_right = a3_portrait_compat and (is_a3_portrait or is_a4_landscape)
 
                 # 座標計算（右上配置、回転対応）
                 margin = 28.35  # 10mm
                 if original_rotation == 0:
                     x = page_width - text_width - margin
-                    if a3_portrait_compat and is_a3_portrait:
-                        # A3縦+左綴じ対応: 右下に挿入（左綴じで90°回転後に右上になる）
+                    if needs_bottom_right:
+                        # 左綴じ対応: 右下に挿入（90°回転後に右上になる）
                         y = page_height - margin - font_size
-                        logger.info(f"A3縦検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
+                        if is_a4_landscape:
+                            logger.info(f"A4横検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
+                        else:
+                            logger.info(f"A3縦検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
                     else:
                         y = margin + font_size
                     rotate_param = 0

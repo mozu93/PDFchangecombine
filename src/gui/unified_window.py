@@ -649,7 +649,7 @@ class UnifiedWindow:
 
         self.a3_compat_var = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(
-            row4, text="A3縦ページを左綴じ対応位置（右下）に挿入",
+            row4, text="A3縦・A4横ページを左綴じ対応位置（右下）に挿入",
             variable=self.a3_compat_var,
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
             progress_color=CLR_PRIMARY
