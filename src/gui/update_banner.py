@@ -17,6 +17,7 @@ from typing import Optional
 import customtkinter as ctk
 
 from ..config import APP_VERSION
+from .theme import FONT_FAMILY
 from ..utils.updater import (
     check_latest_version,
     is_newer_version,
@@ -78,7 +79,7 @@ class UpdateBanner(ctk.CTkFrame):
             self,
             text="",
             text_color=self._TEXT,
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
         )
         self._msg.pack(side="left", padx=(14, 8), pady=6)
 
@@ -89,7 +90,7 @@ class UpdateBanner(ctk.CTkFrame):
             fg_color="transparent",
             hover_color=self._BORDER,
             text_color=self._TEXT,
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
             command=self._dismiss,
         )
         self._close_btn.pack(side="right", padx=10, pady=6)
@@ -101,7 +102,7 @@ class UpdateBanner(ctk.CTkFrame):
             fg_color=self._BTN_DL,
             hover_color=self._BTN_DLH,
             text_color="white",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
             command=self._start_download,
         )
 
@@ -115,7 +116,7 @@ class UpdateBanner(ctk.CTkFrame):
             self._prog_frame,
             text="0.0 / ? MB",
             text_color=self._TEXT,
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
         )
         self._prog_label.pack(side="left")
 
@@ -126,7 +127,7 @@ class UpdateBanner(ctk.CTkFrame):
             fg_color=self._BTN_OK,
             hover_color=self._BTN_OKH,
             text_color="white",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
             command=self._install,
         )
 
