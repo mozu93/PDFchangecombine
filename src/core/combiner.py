@@ -737,11 +737,12 @@ class PDFCombiner:
                 is_a3_portrait = (original_rotation == 0
                                   and page_height > 1000
                                   and page_height > page_width)
-                # A4横: 横長 かつ A4相当サイズ（A3横=幅約1190ptを除外するため幅<950pt）
-                is_a4_landscape = (original_rotation == 0
-                                   and page_width > page_height
-                                   and page_width < 950)
-                needs_bottom_right = a3_portrait_compat and (is_a3_portrait or is_a4_landscape)
+                # 横長ページ: rotation=0 の横長（A3横=幅約1190ptを除外するため幅<1100pt）
+                # PowerPoint 16:9(約960pt)・A4横(約842pt)等をすべて対象に含める
+                is_landscape_for_binding = (original_rotation == 0
+                                            and page_width > page_height
+                                            and page_width < 1100)
+                needs_bottom_right = a3_portrait_compat and (is_a3_portrait or is_landscape_for_binding)
 
                 # 座標計算（右上配置、回転対応）
                 margin = 28.35  # 10mm
@@ -750,8 +751,8 @@ class PDFCombiner:
                     if needs_bottom_right:
                         # 左綴じ対応: 右下に挿入（90°回転後に右上になる）
                         y = page_height - margin - font_size
-                        if is_a4_landscape:
-                            logger.info(f"A4横検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
+                        if is_landscape_for_binding:
+                            logger.info(f"横長ページ検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
                         else:
                             logger.info(f"A3縦検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
                     else:
