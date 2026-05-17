@@ -37,7 +37,7 @@ Filename: "{app}\PDFConverter.exe"; Description: "{cm:LaunchProgram,PDF変換・
 
 [Code]
 { Shell にアイコン変更を通知するための API 宣言 }
-procedure SHChangeNotify(wEventId: Integer; uFlags: Cardinal; dwItem1, dwItem2: Pointer);
+procedure SHChangeNotify(wEventId: Integer; uFlags: Cardinal; dwItem1: Integer; dwItem2: Integer);
   external 'SHChangeNotify@shell32.dll stdcall';
 
 const
@@ -56,6 +56,6 @@ begin
     Exec(ExpandConstant('{sys}\ie4uinit.exe'), '-show', '', SW_HIDE,
          ewWaitUntilTerminated, ResultCode);
     { Shell にアイコン変更を通知（エクスプローラーが即時反映） }
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nil, nil);
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, 0, 0);
   end;
 end;
