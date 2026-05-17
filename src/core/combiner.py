@@ -747,15 +747,17 @@ class PDFCombiner:
                 # 座標計算（右上配置、回転対応）
                 margin = 28.35  # 10mm
                 if original_rotation == 0:
-                    x = page_width - text_width - margin
                     if needs_bottom_right:
-                        # 左綴じ対応: 右下に挿入（90°回転後に右上になる）
-                        y = page_height - margin - font_size
+                        # 左綴じ対応: 右下 + 90°CW回転テキスト
+                        # 回転後の視覚幅=font_size, 視覚高=text_width で座標を配置
+                        x = page_width - margin - font_size
+                        y = page_height - margin - text_width
                         if is_landscape_for_binding:
-                            logger.info(f"横長ページ検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
+                            logger.info(f"横長ページ検出: 左綴じ対応(右下+90°CW) (w={page_width:.0f}, h={page_height:.0f})")
                         else:
-                            logger.info(f"A3縦検出: 左綴じ対応で右下に挿入 (w={page_width:.0f}, h={page_height:.0f})")
+                            logger.info(f"A3縦検出: 左綴じ対応(右下+90°CW) (w={page_width:.0f}, h={page_height:.0f})")
                     else:
+                        x = page_width - text_width - margin
                         y = margin + font_size
                     rotate_param = 0
                 elif original_rotation == 90:
@@ -825,8 +827,10 @@ class PDFCombiner:
 
                     else:
                         # 通常ページ（0度）の場合はReportLabオーバーレイ
+                        lb_text_rotate = -90 if needs_bottom_right else 0
                         overlay_data = self._create_japanese_overlay_with_proper_embedding(
-                            page_width, page_height, document_text, x, y, font_size, rotate_param
+                            page_width, page_height, document_text, x, y, font_size, rotate_param,
+                            text_rotate=lb_text_rotate
                         )
 
                         if overlay_data:
@@ -848,7 +852,17 @@ class PDFCombiner:
                             logger.warning(f"ReportLab失敗、ひらがなで挿入: {kana_text}")
 
                         # 四角囲いの描画（PyMuPDF）
-                        self._draw_simple_rectangle(page, x, y, text_width, font_size, rotate_param)
+                        if needs_bottom_right:
+                            # 90°CW回転テキスト: 幅=font_size, 高さ=text_width
+                            try:
+                                rp = 4
+                                rect = fitz.Rect(x - rp, y - rp,
+                                                 x + font_size + rp, y + text_width + rp)
+                                page.draw_rect(rect, color=(0, 0, 0), width=1.5)
+                            except Exception as re:
+                                logger.debug(f"左綴じ矩形描画エラー: {re}")
+                        else:
+                            self._draw_simple_rectangle(page, x, y, text_width, font_size, rotate_param)
 
                 except Exception as e:
                     logger.error(f"1ページ目テキスト挿入エラー: {e}")
@@ -911,7 +925,8 @@ class PDFCombiner:
 
     def _create_japanese_overlay_with_proper_embedding(self, page_width: float, page_height: float,
                                                      document_text: str, x: float, y: float,
-                                                     font_size: float, rotate_param: int) -> bytes:
+                                                     font_size: float, rotate_param: int,
+                                                     text_rotate: int = 0) -> bytes:
         """
         確実な日本語フォント埋め込みでReportLabオーバーレイを作成
 
@@ -1008,7 +1023,18 @@ class PDFCombiner:
                 logger.info(f"270度回転ページ: ReportLab座標({draw_x:.1f}, {draw_y:.1f})にマイナス90度回転テキスト描画")
             else:
                 # 通常ページ（0度）の場合
-                c.drawString(x, page_height - y, document_text)  # Y座標を反転
+                draw_x = x
+                draw_y = page_height - y  # fitz→ReportLab座標変換
+                if text_rotate == -90:
+                    # 左綴じ対応: 90°CW回転テキスト
+                    c.saveState()
+                    c.translate(draw_x, draw_y)
+                    c.rotate(-90)
+                    c.drawString(0, 0, document_text)
+                    c.restoreState()
+                    logger.info(f"左綴じ対応90°CW回転テキスト: RL座標({draw_x:.1f}, {draw_y:.1f})")
+                else:
+                    c.drawString(draw_x, draw_y, document_text)
 
             # PDFを完成
             c.showPage()
