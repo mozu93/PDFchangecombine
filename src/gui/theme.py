@@ -12,6 +12,7 @@ FONT_FAMILY = "Yu Gothic UI"
 TAB_CONVERSION  = ("#2B6CB0", "#1A4A7A")   # (active, hover)  PDF変換  青
 TAB_COMBINATION = ("#276749", "#1C4D36")   # PDF結合  緑
 TAB_DOCUMENT    = ("#C05621", "#963D15")   # 資料NO   オレンジ
+TAB_PAGENUMBER  = ("#553C9A", "#3D2B6E")   # ページ番号  紫
 TAB_INACTIVE    = ("#718096", "#4A5568")   # 非選択タブ  グレー
 
 # ── カラー定数 ──────────────────────────────────────────────

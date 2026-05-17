@@ -40,7 +40,7 @@ from .theme import (
     CLR_RED_TEXT, CLR_GRAY_TEXT, CLR_DARK_TEXT, CLR_LIST_HEADER,
     CLR_WHITE, get_file_type_badge,
     FONT_FAMILY,
-    TAB_CONVERSION, TAB_COMBINATION, TAB_DOCUMENT, TAB_INACTIVE,
+    TAB_CONVERSION, TAB_COMBINATION, TAB_DOCUMENT, TAB_PAGENUMBER, TAB_INACTIVE,
 )
 from ..utils.error_handler import error_handler, ErrorSeverity
 from ..core.converter import PDFConverter
@@ -85,6 +85,7 @@ class UnifiedWindow:
 
         # オプション管理
         self.split_excel_sheets_var = ctk.BooleanVar(value=False)
+        self.pagenumber_files: List[str] = []
 
         # UI作成
         self._create_main_ui()
@@ -171,9 +172,10 @@ class UnifiedWindow:
 
         # ── カスタムタブバー ──
         _TAB_DEFS = [
-            ("PDF変換",   TAB_CONVERSION),
-            ("資料NO挿入", TAB_DOCUMENT),
-            ("PDF結合",   TAB_COMBINATION),
+            ("PDF変換",    TAB_CONVERSION),
+            ("資料NO挿入",  TAB_DOCUMENT),
+            ("PDF結合",    TAB_COMBINATION),
+            ("ページ番号挿入", TAB_PAGENUMBER),
         ]
         self._tab_active_colors = {name: colors for name, colors in _TAB_DEFS}
         self._tab_buttons: dict = {}
@@ -212,11 +214,13 @@ class UnifiedWindow:
         self.conversion_tab      = self._tab_frames["PDF変換"]
         self.combination_tab     = self._tab_frames["PDF結合"]
         self.document_number_tab = self._tab_frames["資料NO挿入"]
+        self.pagenumber_tab      = self._tab_frames["ページ番号挿入"]
 
         # 各タブのUI作成
         self._create_conversion_ui()
         self._create_document_number_ui()
         self._create_combination_ui()
+        self._create_pagenumber_ui()
 
         # 初期タブ選択
         self._switch_tab("PDF変換")
@@ -804,6 +808,17 @@ class UnifiedWindow:
             )
             self.document_draggable_list.set_external_drop(
                 self._add_document_number_files,
+                pdf_filter
+            )
+
+            # ページ番号挿入タブ全体をドロップターゲットに
+            drag_drop_handler.setup_drag_drop_recursive(
+                self.pagenumber_tab,
+                self._add_pagenumber_files,
+                pdf_filter
+            )
+            self.pagenumber_draggable_list.set_external_drop(
+                self._add_pagenumber_files,
                 pdf_filter
             )
 
@@ -1822,6 +1837,289 @@ class UnifiedWindow:
             self.root.destroy()
             logger.info("PDF変換・結合ツール 正常終了")
     
+    # ════════════════════════════════════════════════════════════
+    # ページ番号挿入タブ
+    # ════════════════════════════════════════════════════════════
+
+    def _create_pagenumber_ui(self) -> None:
+        """ページ番号挿入タブUI"""
+        ctk.CTkLabel(
+            self.pagenumber_tab,
+            text="PDFファイルのフッターにページ番号を挿入します",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(pady=(10, 5))
+
+        # ── オプション ──
+        opt_frame = ctk.CTkFrame(
+            self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=1, border_color=CLR_BORDER, corner_radius=6
+        )
+        opt_frame.pack(fill="x", padx=15, pady=(0, 8))
+
+        opt_row = ctk.CTkFrame(opt_frame, fg_color="transparent")
+        opt_row.pack(fill="x", padx=8, pady=6)
+
+        ctk.CTkLabel(
+            opt_row, text="開始ページ:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(side="left", padx=(0, 4))
+
+        self.pn_start_page_var = ctk.StringVar(value="1")
+        ctk.CTkEntry(
+            opt_row, textvariable=self.pn_start_page_var, width=50,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            opt_row, text="ページ",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(side="left", padx=(4, 24))
+
+        ctk.CTkLabel(
+            opt_row, text="開始番号:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(side="left", padx=(0, 4))
+
+        self.pn_start_number_var = ctk.StringVar(value="1")
+        ctk.CTkEntry(
+            opt_row, textvariable=self.pn_start_number_var, width=50,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(side="left")
+
+        # ── ツールバー ──
+        toolbar = ctk.CTkFrame(
+            self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=1, border_color=CLR_BORDER, corner_radius=6
+        )
+        toolbar.pack(fill="x", padx=15, pady=(0, 5))
+
+        ctk.CTkButton(
+            toolbar, text="PDF追加",
+            command=self._select_pagenumber_files,
+            height=32, width=90,
+            fg_color="#553C9A", hover_color="#3D2B6E",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
+        ).pack(side="left", padx=(8, 4), pady=6)
+
+        self.pn_delete_btn = ctk.CTkButton(
+            toolbar, text="選択削除",
+            command=self._delete_selected_pagenumber,
+            height=32, width=80,
+            fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
+            hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13), state="disabled"
+        )
+        self.pn_delete_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.pn_clear_btn = ctk.CTkButton(
+            toolbar, text="クリア",
+            command=self._clear_pagenumber_files,
+            height=32, width=70,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13), state="disabled"
+        )
+        self.pn_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.pn_move_up_btn = ctk.CTkButton(
+            toolbar, text="↑", command=self._move_pagenumber_up,
+            height=32, width=36,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
+        )
+        self.pn_move_up_btn.pack(side="left", padx=(0, 2), pady=6)
+
+        self.pn_move_down_btn = ctk.CTkButton(
+            toolbar, text="↓", command=self._move_pagenumber_down,
+            height=32, width=36,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
+        )
+        self.pn_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.pn_count_label = ctk.CTkLabel(
+            toolbar, text="ファイル数: 0",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13), text_color=CLR_GRAY_TEXT
+        )
+        self.pn_count_label.pack(side="right", padx=10, pady=6)
+
+        # ── ファイルリスト ──
+        self.pagenumber_draggable_list = DraggableFileList(
+            self.pagenumber_tab, height=200,
+            label_text="📄 ページ番号を挿入するPDFファイル（ドラッグで並び替え可能）"
+        )
+        self.pagenumber_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
+        self.pagenumber_draggable_list.on_selection_change = self._on_pagenumber_selection_change
+        self.pagenumber_draggable_list.on_order_change = self._on_pagenumber_order_change
+
+        self.pn_list_msg = ctk.CTkLabel(
+            self.pagenumber_draggable_list,
+            text="📄 PDFファイルをここにドラッグ&ドロップしてください\n\n"
+                 "・複数ファイルを追加した場合は結合してからページ番号を挿入します\n"
+                 "・ドラッグで順序変更、↑↓ボタンでも調整可能",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), justify="left"
+        )
+        self.pn_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # ── 実行ボタン ──
+        self.pn_execute_btn = ctk.CTkButton(
+            self.pagenumber_tab,
+            text="📄 ページ番号挿入実行",
+            command=self._start_pagenumber_insertion,
+            height=40, state="disabled",
+            fg_color="#553C9A", hover_color="#3D2B6E",
+        )
+        self.pn_execute_btn.pack(pady=(10, 10))
+
+        self.pn_progress = ctk.CTkProgressBar(self.pagenumber_tab)
+        self.pn_progress.pack(fill="x", padx=15, pady=(0, 8))
+        self.pn_progress.set(0)
+
+        self.pn_status = ctk.CTkLabel(
+            self.pagenumber_tab,
+            text="PDFファイルを追加してください",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        self.pn_status.pack(pady=(0, 10))
+
+    # ── ファイル操作 ─────────────────────────────────────────────
+
+    def _select_pagenumber_files(self) -> None:
+        files = fd.askopenfilenames(
+            title="ページ番号を挿入するPDFを選択",
+            filetypes=[("PDFファイル", "*.pdf"), ("すべてのファイル", "*.*")]
+        )
+        if files:
+            self._add_pagenumber_files(list(files))
+
+    def _add_pagenumber_files(self, paths: List[str]) -> None:
+        pdf_files = [p for p in paths if Path(p).suffix.lower() == '.pdf' and Path(p).is_file()]
+        new_files = [f for f in pdf_files if f not in self.pagenumber_files]
+        if new_files:
+            self.pagenumber_draggable_list.add_files(new_files)
+            self.pagenumber_files.extend(new_files)
+            self._update_pagenumber_display()
+
+    def _delete_selected_pagenumber(self) -> None:
+        selected = self.pagenumber_draggable_list.get_selected_files()
+        if not selected:
+            return
+        if messagebox.askyesno("確認", f"{len(selected)}件のファイルを削除しますか？"):
+            self.pagenumber_draggable_list.remove_selected_files()
+            self._update_pagenumber_display()
+
+    def _clear_pagenumber_files(self) -> None:
+        self.pagenumber_draggable_list.clear_files()
+        self.pagenumber_files.clear()
+        self._update_pagenumber_display()
+
+    def _move_pagenumber_up(self) -> None:
+        if not self.pagenumber_draggable_list.move_selected_up():
+            self.pn_status.configure(text="これ以上上に移動できません")
+
+    def _move_pagenumber_down(self) -> None:
+        if not self.pagenumber_draggable_list.move_selected_down():
+            self.pn_status.configure(text="これ以上下に移動できません")
+
+    def _on_pagenumber_selection_change(self, selected: List[str]) -> None:
+        has = len(selected) > 0
+        self.pn_delete_btn.configure(state="normal" if has else "disabled")
+        self.pn_move_up_btn.configure(state="normal" if has else "disabled")
+        self.pn_move_down_btn.configure(state="normal" if has else "disabled")
+
+    def _on_pagenumber_order_change(self, file_paths: List[str]) -> None:
+        self.pagenumber_files = file_paths.copy()
+        self._update_pagenumber_display()
+
+    def _update_pagenumber_display(self) -> None:
+        current = self.pagenumber_draggable_list.get_files()
+        self.pagenumber_files = current
+        if current:
+            self.pn_list_msg.pack_forget()
+            self.pn_clear_btn.configure(state="normal")
+            self.pn_execute_btn.configure(state="normal")
+            self.pn_count_label.configure(text=f"ファイル数: {len(current)}")
+            self.pn_status.configure(text=f"{len(current)}個のPDFが追加されました")
+        else:
+            self.pn_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
+            self.pn_clear_btn.configure(state="disabled")
+            self.pn_execute_btn.configure(state="disabled")
+            self.pn_count_label.configure(text="ファイル数: 0")
+            self.pn_status.configure(text="PDFファイルを追加してください")
+
+    # ── 実行 ────────────────────────────────────────────────────
+
+    def _start_pagenumber_insertion(self) -> None:
+        if not self.pagenumber_files:
+            return
+
+        try:
+            start_page = int(self.pn_start_page_var.get())
+            start_number = int(self.pn_start_number_var.get())
+        except ValueError:
+            messagebox.showwarning("入力エラー", "開始ページと開始番号には数字を入力してください。")
+            return
+
+        output_path = fd.asksaveasfilename(
+            title="保存先を選択",
+            filetypes=[("PDFファイル", "*.pdf")],
+            defaultextension=".pdf"
+        )
+        if not output_path:
+            return
+
+        self.pn_execute_btn.configure(state="disabled")
+        self.pn_status.configure(text="処理中...")
+        self.pn_progress.set(0)
+
+        thread = threading.Thread(
+            target=self._run_pagenumber_insertion,
+            args=(output_path, start_page, start_number)
+        )
+        thread.daemon = True
+        thread.start()
+
+    def _run_pagenumber_insertion(self, output_path: str, start_page: int, start_number: int) -> None:
+        try:
+            def progress_callback(message, progress):
+                self.root.after(0, lambda: self.pn_progress.set(progress / 100))
+                self.root.after(0, lambda: self.pn_status.configure(text=message))
+
+            result = self.pdf_combiner.combine_pdfs(
+                self.pagenumber_files.copy(),
+                output_path,
+                add_blank_page=False,
+                add_page_numbers=True,
+                start_page=start_page,
+                start_number=start_number,
+                progress_callback=progress_callback
+            )
+            self.root.after(0, lambda: self._on_pagenumber_complete(result))
+        except Exception as e:
+            from ..utils.error_handler import ErrorSeverity
+            self.root.after(0, lambda: error_handler.handle_error(
+                e, ErrorSeverity.CRITICAL, "ページ番号挿入"
+            ))
+            self.root.after(0, lambda: self.pn_execute_btn.configure(state="normal"))
+
+    def _on_pagenumber_complete(self, result) -> None:
+        self.pn_progress.set(1.0)
+        if result.success:
+            msg = (f"ページ番号挿入が完了しました！\n\n"
+                   f"• 処理ファイル数: {len(result.processed_files)}個\n"
+                   f"• 総ページ数: {result.total_pages}ページ\n"
+                   f"• 出力ファイル: {Path(result.output_path).name}\n"
+                   f"• 処理時間: {result.processing_time:.1f}秒")
+            self.pn_status.configure(text=f"完了: {result.total_pages}ページ")
+            self._show_and_open_results("ページ番号挿入完了", msg, [result.output_path])
+            self._clear_pagenumber_files()
+        else:
+            messagebox.showerror("エラー", f"処理に失敗しました。\n\n{result.error_message}")
+            self.pn_status.configure(text="エラーが発生しました")
+        self.pn_execute_btn.configure(state="normal")
+
     def _open_help(self) -> None:
         """ヘルプダイアログを開く"""
         HelpDialog(self.root)
