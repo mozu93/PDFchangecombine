@@ -309,8 +309,10 @@ class PDFPreviewDialog(ctk.CTkToplevel):
 
         self._orig_img = img
         w, h = img.size
-        cw = self._canvas.winfo_width() or _CANVAS_W
-        ch = self._canvas.winfo_height() or _CANVAS_H
+        cw = self._canvas.winfo_width()
+        ch = self._canvas.winfo_height()
+        cw = cw if cw > 4 else _CANVAS_W
+        ch = ch if ch > 4 else _CANVAS_H
         self._fit_scale = min(cw / w, ch / h, 1.0)
         self._zoom_idx = _FIT_IDX
 
