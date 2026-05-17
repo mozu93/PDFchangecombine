@@ -1,0 +1,121 @@
+<h2>ファイル削除の操作方法</h2>
+<p class="subtitle">チェックボックス廃止後、どうやってファイルを削除しますか？</p>
+
+<div class="cards">
+
+  <!-- Option A: 行クリック選択 + ツールバー削除 -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#F7FAFC;border-radius:8px;padding:12px;font-family:'Segoe UI',sans-serif;font-size:12px;border:1px solid #E2E8F0;">
+        <div style="font-size:10px;color:#2B6CB0;font-weight:600;margin-bottom:6px;">📁 変換対象ファイル</div>
+        <!-- 選択された行 -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:#EBF8FF;border-radius:4px;margin-bottom:3px;border:1.5px solid #90CDF4;border-left:3px solid #3182CE;">
+          <span style="font-size:11px;color:#2D3748;">📝 document.docx</span>
+          <span style="background:#3182CE;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Word</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:3px;border:1.5px solid transparent;">
+          <span style="font-size:11px;color:#2D3748;">📊 report.xlsx</span>
+          <span style="background:#38A169;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Excel</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:8px;border:1.5px solid transparent;">
+          <span style="font-size:11px;color:#2D3748;">🎯 slides.pptx</span>
+          <span style="background:#DD6B20;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">PPT</span>
+        </div>
+        <!-- ツールバー -->
+        <div style="display:flex;gap:4px;align-items:center;border-top:1px solid #E2E8F0;padding-top:8px;">
+          <div style="background:#EBF8FF;color:#2B6CB0;border:1px solid #90CDF4;border-radius:5px;padding:4px 10px;font-size:10px;">📂 追加</div>
+          <div style="background:#3182CE;color:white;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:600;">✕ 選択削除</div>
+          <div style="font-size:9px;color:#718096;margin-left:auto;">1件選択中</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 行クリック選択 → ツールバー削除</h3>
+      <p>行をクリックするとハイライト。選択後にツールバーの「削除」ボタンで削除。複数選択も可能。現在の↑↓移動とも統一できる。</p>
+      <div class="pros-cons" style="font-size:11px;">
+        <div class="pros"><h4>メリット</h4><ul><li>複数まとめて削除</li><li>移動操作と統一</li></ul></div>
+        <div class="cons"><h4>デメリット</h4><ul><li>2ステップ操作</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: 行ホバーで×ボタン -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#F7FAFC;border-radius:8px;padding:12px;font-family:'Segoe UI',sans-serif;font-size:12px;border:1px solid #E2E8F0;">
+        <div style="font-size:10px;color:#2B6CB0;font-weight:600;margin-bottom:6px;">📁 変換対象ファイル</div>
+        <!-- ホバー状態の行（×ボタンが見える） -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:#EBF8FF;border-radius:4px;margin-bottom:3px;border:1.5px solid #90CDF4;">
+          <span style="font-size:11px;color:#2D3748;">📝 document.docx</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="background:#3182CE;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Word</span>
+            <span style="background:#FED7D7;color:#C53030;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;font-weight:bold;">✕</span>
+          </div>
+        </div>
+        <!-- 通常行（×ボタン非表示） -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:3px;border:1.5px solid transparent;">
+          <span style="font-size:11px;color:#2D3748;">📊 report.xlsx</span>
+          <span style="background:#38A169;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Excel</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:8px;border:1.5px solid transparent;">
+          <span style="font-size:11px;color:#2D3748;">🎯 slides.pptx</span>
+          <span style="background:#DD6B20;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">PPT</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;border-top:1px solid #E2E8F0;padding-top:8px;">
+          <div style="background:#EBF8FF;color:#2B6CB0;border:1px solid #90CDF4;border-radius:5px;padding:4px 10px;font-size:10px;">📂 追加</div>
+          <div style="font-size:9px;color:#A0AEC0;margin-left:auto;">行にマウスを乗せると × が出現</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. ホバーで × ボタン表示</h3>
+      <p>マウスを行に乗せると右端に×ボタンが現れる。1クリックでその行だけ即削除。シンプルで直感的。</p>
+      <div class="pros-cons" style="font-size:11px;">
+        <div class="pros"><h4>メリット</h4><ul><li>1クリックで削除</li><li>UIがすっきり</li></ul></div>
+        <div class="cons"><h4>デメリット</h4><ul><li>複数同時削除はできない</li><li>ホバーが必要</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C: 両方（行選択 + 行×ボタン） -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#F7FAFC;border-radius:8px;padding:12px;font-family:'Segoe UI',sans-serif;font-size:12px;border:1px solid #E2E8F0;">
+        <div style="font-size:10px;color:#2B6CB0;font-weight:600;margin-bottom:6px;">📁 変換対象ファイル</div>
+        <!-- 選択 + ×ボタン両方 -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:#EBF8FF;border-radius:4px;margin-bottom:3px;border:1.5px solid #90CDF4;border-left:3px solid #3182CE;">
+          <span style="font-size:11px;color:#2D3748;">📝 document.docx</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="background:#3182CE;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Word</span>
+            <span style="background:#FED7D7;color:#C53030;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;font-weight:bold;">✕</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:#EBF8FF;border-radius:4px;margin-bottom:3px;border:1.5px solid #90CDF4;border-left:3px solid #3182CE;">
+          <span style="font-size:11px;color:#2D3748;">📊 report.xlsx</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="background:#38A169;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Excel</span>
+            <span style="background:#FED7D7;color:#C53030;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;font-weight:bold;">✕</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;margin-bottom:8px;border:1.5px solid transparent;">
+          <span style="font-size:11px;color:#2D3748;">🎯 slides.pptx</span>
+          <span style="background:#DD6B20;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">PPT</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;border-top:1px solid #E2E8F0;padding-top:8px;">
+          <div style="background:#EBF8FF;color:#2B6CB0;border:1px solid #90CDF4;border-radius:5px;padding:4px 10px;font-size:10px;">📂 追加</div>
+          <div style="background:#3182CE;color:white;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:600;">✕ まとめて削除</div>
+          <div style="font-size:9px;color:#718096;margin-left:auto;">2件選択中</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 両方サポート（推奨）</h3>
+      <p>行クリックで複数選択 → ツールバー「まとめて削除」と、ホバー×ボタンによる1件即削除を両立。操作の自由度が高い。</p>
+      <div class="pros-cons" style="font-size:11px;">
+        <div class="pros"><h4>メリット</h4><ul><li>1件も複数も対応</li><li>最も直感的</li></ul></div>
+        <div class="cons"><h4>デメリット</h4><ul><li>実装が少し複雑</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>

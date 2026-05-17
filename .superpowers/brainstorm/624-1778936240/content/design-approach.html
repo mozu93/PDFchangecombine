@@ -1,0 +1,135 @@
+<h2>GUIデザイン改善：アプローチ比較</h2>
+<p class="subtitle">チェックボックスの役割整理とデザイン方向性を選んでください</p>
+
+<div class="cards">
+
+  <!-- Option A: 現状改良型 -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f8f9fa;border-radius:8px;padding:12px;font-family:sans-serif;font-size:12px;">
+        <div style="background:#4A90D9;color:white;border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:13px;font-weight:bold;">📄 PDF変換・結合ツール</div>
+        <!-- タブ -->
+        <div style="display:flex;gap:2px;margin-bottom:8px;">
+          <div style="background:#fffacd;border-radius:4px 4px 0 0;padding:4px 10px;font-size:11px;border:1px solid #ccc;">PDF変換</div>
+          <div style="background:#e0e0e0;border-radius:4px 4px 0 0;padding:4px 10px;font-size:11px;border:1px solid #ccc;">PDF結合</div>
+          <div style="background:#e0e0e0;border-radius:4px 4px 0 0;padding:4px 10px;font-size:11px;border:1px solid #ccc;">資料NO</div>
+        </div>
+        <!-- ファイルリスト（チェックボックス付き・現状）-->
+        <div style="background:#E6F7FF;border-radius:6px;padding:8px;margin-bottom:8px;">
+          <div style="font-size:10px;color:#666;margin-bottom:4px;">📁 変換対象ファイルリスト</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:3px 4px;"><input type="checkbox" checked> <span>document.docx</span></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:3px 4px;background:#FFE0B2;border-radius:3px;"><input type="checkbox" checked> <span>report.xlsx</span></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:3px 4px;"><input type="checkbox"> <span>slides.pptx</span></div>
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <div style="background:#e8e8e8;border-radius:4px;padding:3px 8px;font-size:10px;">📂 ファイル選択</div>
+          <div style="background:#e8e8e8;border-radius:4px;padding:3px 8px;font-size:10px;">🗑️ 選択クリア</div>
+        </div>
+        <div style="background:#4A90D9;color:white;border-radius:4px;padding:4px;text-align:center;font-size:11px;">🔄 PDF変換開始</div>
+        <div style="background:#e0e0e0;border-radius:3px;height:6px;margin-top:6px;"></div>
+        <div style="font-size:9px;color:#999;text-align:center;margin-top:3px;">ファイルを追加してください</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 現状改良型</h3>
+      <p>チェックボックスを残しつつ、用途を「削除対象の選択」と明示。配色・フォントをモダンに。変更量が少なく安全。</p>
+      <div class="pros-cons" style="font-size:11px;">
+        <div class="pros"><h4>メリット</h4><ul><li>変更リスク小</li><li>既存ロジック流用</li></ul></div>
+        <div class="cons"><h4>デメリット</h4><ul><li>UXの曖昧さが残る</li><li>チェックの意味が不明確</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: シンプル行選択型 -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f8f9fa;border-radius:8px;padding:12px;font-family:sans-serif;font-size:12px;">
+        <div style="background:linear-gradient(135deg,#2D3748,#4A5568);color:white;border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:13px;font-weight:bold;">📄 PDF変換・結合ツール</div>
+        <div style="display:flex;gap:2px;margin-bottom:8px;">
+          <div style="background:white;border-radius:4px 4px 0 0;padding:4px 10px;font-size:11px;border-bottom:2px solid #4A90D9;font-weight:bold;color:#4A90D9;">PDF変換</div>
+          <div style="background:#f0f0f0;border-radius:4px 4px 0 0;padding:4px 10px;font-size:11px;color:#888;">PDF結合</div>
+          <div style="background:#f0f0f0;border-radius:4px 4px 0 0;padding:4px 10px;font-size:11px;color:#888;">資料NO</div>
+        </div>
+        <div style="background:white;border-radius:6px;padding:8px;margin-bottom:8px;border:1px solid #e0e0e0;">
+          <div style="font-size:10px;color:#4A90D9;font-weight:bold;margin-bottom:4px;">📁 変換対象ファイル</div>
+          <!-- 行クリック選択 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;background:#EBF8FF;border:1px solid #90CDF4;margin-bottom:2px;">
+            <span style="font-size:11px;">📝 document.docx</span>
+            <span style="font-size:9px;background:#4A90D9;color:white;border-radius:3px;padding:1px 4px;">Word</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;border:1px solid transparent;margin-bottom:2px;">
+            <span style="font-size:11px;">📊 report.xlsx</span>
+            <span style="font-size:9px;background:#48BB78;color:white;border-radius:3px;padding:1px 4px;">Excel</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;border:1px solid transparent;">
+            <span style="font-size:11px;">📊 slides.pptx</span>
+            <span style="font-size:9px;background:#ED8936;color:white;border-radius:3px;padding:1px 4px;">PPT</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <div style="background:#EBF8FF;color:#4A90D9;border:1px solid #90CDF4;border-radius:4px;padding:3px 8px;font-size:10px;">📂 追加</div>
+          <div style="background:#FFF5F5;color:#E53E3E;border:1px solid #FEB2B2;border-radius:4px;padding:3px 8px;font-size:10px;">✕ 削除</div>
+          <div style="font-size:10px;color:#999;padding:3px 0;margin-left:auto;">3ファイル</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#4A90D9,#357ABD);color:white;border-radius:4px;padding:5px;text-align:center;font-size:11px;font-weight:bold;">🔄 PDF変換開始</div>
+        <div style="background:linear-gradient(90deg,#4A90D9 60%,#e0e0e0 60%);border-radius:3px;height:5px;margin-top:6px;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. シンプル行選択型</h3>
+      <p>チェックボックスを廃止。行クリックでハイライト選択し、ファイル種別バッジを表示。削除ボタンで選択行を削除。</p>
+      <div class="pros-cons" style="font-size:11px;">
+        <div class="pros"><h4>メリット</h4><ul><li>直感的な操作</li><li>種別が一目でわかる</li></ul></div>
+        <div class="cons"><h4>デメリット</h4><ul><li>ロジック変更が必要</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C: カードUI型 -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;border-radius:8px;padding:12px;font-family:sans-serif;font-size:12px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+          <div style="background:#7C3AED;border-radius:6px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:14px;">📄</div>
+          <span style="color:white;font-weight:bold;font-size:13px;">PDF Tools</span>
+        </div>
+        <!-- サイドバー型タブ -->
+        <div style="display:flex;gap:6px;">
+          <div style="display:flex;flex-direction:column;gap:2px;width:70px;">
+            <div style="background:#7C3AED;color:white;border-radius:4px;padding:5px 6px;font-size:9px;text-align:center;">🔄 変換</div>
+            <div style="background:#2d2d4e;color:#aaa;border-radius:4px;padding:5px 6px;font-size:9px;text-align:center;">📋 結合</div>
+            <div style="background:#2d2d4e;color:#aaa;border-radius:4px;padding:5px 6px;font-size:9px;text-align:center;">🔖 資料NO</div>
+          </div>
+          <div style="flex:1;">
+            <div style="display:flex;flex-direction:column;gap:3px;margin-bottom:6px;">
+              <div style="background:#2d2d4e;border-radius:4px;padding:5px 8px;border-left:3px solid #7C3AED;">
+                <div style="color:white;font-size:10px;">📝 document.docx</div>
+                <div style="color:#7C3AED;font-size:8px;">Word → PDF</div>
+              </div>
+              <div style="background:#3d2d6e;border-radius:4px;padding:5px 8px;border-left:3px solid #A78BFA;">
+                <div style="color:white;font-size:10px;">📊 report.xlsx</div>
+                <div style="color:#A78BFA;font-size:8px;">Excel → PDF</div>
+              </div>
+              <div style="background:#2d2d4e;border-radius:4px;padding:5px 8px;border-left:3px solid #7C3AED;">
+                <div style="color:white;font-size:10px;">🎯 slides.pptx</div>
+                <div style="color:#7C3AED;font-size:8px;">PPT → PDF</div>
+              </div>
+            </div>
+            <div style="background:linear-gradient(135deg,#7C3AED,#A78BFA);color:white;border-radius:4px;padding:4px;text-align:center;font-size:10px;font-weight:bold;">変換開始</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. モダンダーク型</h3>
+      <p>サイドバーナビ＋ダークテーマ。ファイルをカード表示しアクセント色で種別を区別。プロフェッショナルな印象。</p>
+      <div class="pros-cons" style="font-size:11px;">
+        <div class="pros"><h4>メリット</h4><ul><li>見た目が洗練</li><li>種別が明確</li></ul></div>
+        <div class="cons"><h4>デメリット</h4><ul><li>実装量多め</li><li>既存テーマと大きく変わる</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px;">※ チェックボックスはB・C両案で廃止し、行クリック選択に統一します</p>

@@ -1,0 +1,124 @@
+<h2>カラーテーマの選択</h2>
+<p class="subtitle">アプリ全体の雰囲気を決めます。どれが好みですか？</p>
+
+<div class="cards">
+
+  <!-- Theme 1: クリーンブルー（現状改良） -->
+  <div class="card" data-choice="blue" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#F7FAFC;border-radius:8px;padding:12px;font-family:'Segoe UI',sans-serif;font-size:12px;border:1px solid #E2E8F0;">
+        <!-- ヘッダー -->
+        <div style="background:linear-gradient(135deg,#2B6CB0,#3182CE);color:white;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">📄</span>
+          <span style="font-size:13px;font-weight:600;">PDF変換・結合ツール</span>
+        </div>
+        <!-- タブ -->
+        <div style="display:flex;border-bottom:2px solid #BEE3F8;margin-bottom:8px;">
+          <div style="padding:5px 12px;font-size:11px;border-bottom:2px solid #2B6CB0;margin-bottom:-2px;color:#2B6CB0;font-weight:600;">PDF変換</div>
+          <div style="padding:5px 12px;font-size:11px;color:#718096;">PDF結合</div>
+          <div style="padding:5px 12px;font-size:11px;color:#718096;">資料NO</div>
+        </div>
+        <!-- ファイルリスト -->
+        <div style="background:white;border:1px solid #E2E8F0;border-radius:6px;padding:6px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:#EBF8FF;border-radius:4px;margin-bottom:3px;border-left:3px solid #3182CE;">
+            <span style="font-size:11px;color:#2D3748;">📝 document.docx</span>
+            <span style="background:#3182CE;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Word</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;margin-bottom:3px;">
+            <span style="font-size:11px;color:#2D3748;">📊 report.xlsx</span>
+            <span style="background:#38A169;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Excel</span>
+          </div>
+        </div>
+        <!-- ボタン -->
+        <div style="display:flex;gap:4px;margin-bottom:8px;">
+          <div style="background:#EBF8FF;color:#2B6CB0;border:1px solid #90CDF4;border-radius:5px;padding:4px 10px;font-size:10px;">📂 追加</div>
+          <div style="background:#FFF5F5;color:#C53030;border:1px solid #FEB2B2;border-radius:5px;padding:4px 8px;font-size:10px;">✕ 削除</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#2B6CB0,#3182CE);color:white;border-radius:5px;padding:6px;text-align:center;font-size:11px;font-weight:600;">🔄 PDF変換開始</div>
+        <div style="background:linear-gradient(90deg,#3182CE 55%,#E2E8F0 55%);border-radius:3px;height:5px;margin-top:6px;"></div>
+        <div style="font-size:9px;color:#A0AEC0;text-align:center;margin-top:3px;">変換中: 2/3 - report.xlsx</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>クリーンブルー</h3>
+      <p>白ベース＋ブルーアクセント。清潔感があり、ビジネス向けの落ち着いたスタイル。</p>
+    </div>
+  </div>
+
+  <!-- Theme 2: スレートグレー（スマート） -->
+  <div class="card" data-choice="slate" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#F1F5F9;border-radius:8px;padding:12px;font-family:'Segoe UI',sans-serif;font-size:12px;border:1px solid #CBD5E1;">
+        <div style="background:linear-gradient(135deg,#334155,#475569);color:white;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">📄</span>
+          <span style="font-size:13px;font-weight:600;">PDF変換・結合ツール</span>
+        </div>
+        <div style="display:flex;border-bottom:2px solid #94A3B8;margin-bottom:8px;">
+          <div style="padding:5px 12px;font-size:11px;border-bottom:2px solid #334155;margin-bottom:-2px;color:#334155;font-weight:600;">PDF変換</div>
+          <div style="padding:5px 12px;font-size:11px;color:#94A3B8;">PDF結合</div>
+          <div style="padding:5px 12px;font-size:11px;color:#94A3B8;">資料NO</div>
+        </div>
+        <div style="background:white;border:1px solid #CBD5E1;border-radius:6px;padding:6px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:#F8FAFC;border-radius:4px;margin-bottom:3px;border-left:3px solid #475569;">
+            <span style="font-size:11px;color:#1E293B;">📝 document.docx</span>
+            <span style="background:#475569;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Word</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;margin-bottom:3px;">
+            <span style="font-size:11px;color:#1E293B;">📊 report.xlsx</span>
+            <span style="background:#059669;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Excel</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:8px;">
+          <div style="background:#F1F5F9;color:#334155;border:1px solid #CBD5E1;border-radius:5px;padding:4px 10px;font-size:10px;">📂 追加</div>
+          <div style="background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:5px;padding:4px 8px;font-size:10px;">✕ 削除</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#334155,#475569);color:white;border-radius:5px;padding:6px;text-align:center;font-size:11px;font-weight:600;">🔄 PDF変換開始</div>
+        <div style="background:linear-gradient(90deg,#475569 55%,#CBD5E1 55%);border-radius:3px;height:5px;margin-top:6px;"></div>
+        <div style="font-size:9px;color:#94A3B8;text-align:center;margin-top:3px;">変換中: 2/3 - report.xlsx</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>スレートグレー</h3>
+      <p>グレー系の落ち着いた配色。主張しすぎずスマートな印象。コントラストが取りやすく読みやすい。</p>
+    </div>
+  </div>
+
+  <!-- Theme 3: インディゴ（モダン） -->
+  <div class="card" data-choice="indigo" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#EEF2FF;border-radius:8px;padding:12px;font-family:'Segoe UI',sans-serif;font-size:12px;border:1px solid #C7D2FE;">
+        <div style="background:linear-gradient(135deg,#4338CA,#6366F1);color:white;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">📄</span>
+          <span style="font-size:13px;font-weight:600;">PDF変換・結合ツール</span>
+        </div>
+        <div style="display:flex;border-bottom:2px solid #A5B4FC;margin-bottom:8px;">
+          <div style="padding:5px 12px;font-size:11px;border-bottom:2px solid #4338CA;margin-bottom:-2px;color:#4338CA;font-weight:600;">PDF変換</div>
+          <div style="padding:5px 12px;font-size:11px;color:#A5B4FC;">PDF結合</div>
+          <div style="padding:5px 12px;font-size:11px;color:#A5B4FC;">資料NO</div>
+        </div>
+        <div style="background:white;border:1px solid #C7D2FE;border-radius:6px;padding:6px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:#EEF2FF;border-radius:4px;margin-bottom:3px;border-left:3px solid #6366F1;">
+            <span style="font-size:11px;color:#1E1B4B;">📝 document.docx</span>
+            <span style="background:#6366F1;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Word</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;margin-bottom:3px;">
+            <span style="font-size:11px;color:#1E1B4B;">📊 report.xlsx</span>
+            <span style="background:#10B981;color:white;font-size:9px;border-radius:3px;padding:1px 5px;">Excel</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:8px;">
+          <div style="background:#EEF2FF;color:#4338CA;border:1px solid #A5B4FC;border-radius:5px;padding:4px 10px;font-size:10px;">📂 追加</div>
+          <div style="background:#FFF1F2;color:#E11D48;border:1px solid #FECDD3;border-radius:5px;padding:4px 8px;font-size:10px;">✕ 削除</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#4338CA,#6366F1);color:white;border-radius:5px;padding:6px;text-align:center;font-size:11px;font-weight:600;">🔄 PDF変換開始</div>
+        <div style="background:linear-gradient(90deg,#6366F1 55%,#C7D2FE 55%);border-radius:3px;height:5px;margin-top:6px;"></div>
+        <div style="font-size:9px;color:#A5B4FC;text-align:center;margin-top:3px;">変換中: 2/3 - report.xlsx</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>インディゴ</h3>
+      <p>紫がかったインディゴ系。現代的でおしゃれな印象。少し個性的なカラーが好きな方向け。</p>
+    </div>
+  </div>
+
+</div>

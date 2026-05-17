@@ -817,10 +817,6 @@ class UnifiedWindow:
                 self._add_pagenumber_files,
                 pdf_filter
             )
-            self.pagenumber_draggable_list.set_external_drop(
-                self._add_pagenumber_files,
-                pdf_filter
-            )
 
             logger.info("ドラッグ&ドロップ機能設定完了")
             
@@ -1842,12 +1838,56 @@ class UnifiedWindow:
     # ════════════════════════════════════════════════════════════
 
     def _create_pagenumber_ui(self) -> None:
-        """ページ番号挿入タブUI"""
+        """ページ番号挿入タブUI（1ファイル専用・シンプル）"""
         ctk.CTkLabel(
             self.pagenumber_tab,
-            text="PDFファイルのフッターにページ番号を挿入します",
+            text="1つのPDFファイルにページ番号を挿入します",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(pady=(10, 5))
+
+        # ── ファイル選択エリア ──
+        self.pn_drop_frame = ctk.CTkFrame(
+            self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=2, border_color=CLR_BORDER, corner_radius=8
+        )
+        self.pn_drop_frame.pack(fill="both", expand=True, padx=15, pady=(0, 8))
+
+        self.pn_drop_label = ctk.CTkLabel(
+            self.pn_drop_frame,
+            text="📄 PDFファイルをここにドラッグ&ドロップ\n\nまたは",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            text_color=CLR_GRAY_TEXT, justify="center"
+        )
+        self.pn_drop_label.pack(expand=True)
+
+        self.pn_select_btn = ctk.CTkButton(
+            self.pn_drop_frame,
+            text="ファイルを選択",
+            command=self._select_pagenumber_file,
+            width=140, height=34,
+            fg_color="#553C9A", hover_color="#3D2B6E",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
+        )
+        self.pn_select_btn.pack(pady=(0, 20))
+
+        # 選択済みファイル表示（初期は非表示）
+        self.pn_file_frame = ctk.CTkFrame(
+            self.pn_drop_frame, fg_color=CLR_LIGHT_BG,
+            border_width=1, border_color=CLR_SEL_BORDER, corner_radius=6
+        )
+        self.pn_file_label = ctk.CTkLabel(
+            self.pn_file_frame, text="",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            text_color=CLR_DARK_TEXT
+        )
+        self.pn_file_label.pack(side="left", padx=12, pady=8)
+        self.pn_clear_file_btn = ctk.CTkButton(
+            self.pn_file_frame, text="✕", width=26, height=26,
+            fg_color="transparent", hover_color=CLR_RED_LIGHT,
+            text_color=CLR_RED_TEXT, font=ctk.CTkFont(size=11),
+            command=self._clear_pagenumber_file
+        )
+        self.pn_clear_file_btn.pack(side="right", padx=8, pady=8)
 
         # ── オプション ──
         opt_frame = ctk.CTkFrame(
@@ -1857,111 +1897,29 @@ class UnifiedWindow:
         opt_frame.pack(fill="x", padx=15, pady=(0, 8))
 
         opt_row = ctk.CTkFrame(opt_frame, fg_color="transparent")
-        opt_row.pack(fill="x", padx=8, pady=6)
+        opt_row.pack(fill="x", padx=12, pady=8)
 
-        ctk.CTkLabel(
-            opt_row, text="開始ページ:",
+        ctk.CTkLabel(opt_row, text="開始ページ:",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left", padx=(0, 4))
 
         self.pn_start_page_var = ctk.StringVar(value="1")
-        ctk.CTkEntry(
-            opt_row, textvariable=self.pn_start_page_var, width=50,
+        ctk.CTkEntry(opt_row, textvariable=self.pn_start_page_var, width=52,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left")
 
-        ctk.CTkLabel(
-            opt_row, text="ページ",
+        ctk.CTkLabel(opt_row, text="ページ",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left", padx=(4, 24))
 
-        ctk.CTkLabel(
-            opt_row, text="開始番号:",
+        ctk.CTkLabel(opt_row, text="開始番号:",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left", padx=(0, 4))
 
         self.pn_start_number_var = ctk.StringVar(value="1")
-        ctk.CTkEntry(
-            opt_row, textvariable=self.pn_start_number_var, width=50,
+        ctk.CTkEntry(opt_row, textvariable=self.pn_start_number_var, width=52,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left")
-
-        # ── ツールバー ──
-        toolbar = ctk.CTkFrame(
-            self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
-            border_width=1, border_color=CLR_BORDER, corner_radius=6
-        )
-        toolbar.pack(fill="x", padx=15, pady=(0, 5))
-
-        ctk.CTkButton(
-            toolbar, text="PDF追加",
-            command=self._select_pagenumber_files,
-            height=32, width=90,
-            fg_color="#553C9A", hover_color="#3D2B6E",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
-        ).pack(side="left", padx=(8, 4), pady=6)
-
-        self.pn_delete_btn = ctk.CTkButton(
-            toolbar, text="選択削除",
-            command=self._delete_selected_pagenumber,
-            height=32, width=80,
-            fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
-            hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13), state="disabled"
-        )
-        self.pn_delete_btn.pack(side="left", padx=(0, 4), pady=6)
-
-        self.pn_clear_btn = ctk.CTkButton(
-            toolbar, text="クリア",
-            command=self._clear_pagenumber_files,
-            height=32, width=70,
-            fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
-            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13), state="disabled"
-        )
-        self.pn_clear_btn.pack(side="left", padx=(0, 4), pady=6)
-
-        self.pn_move_up_btn = ctk.CTkButton(
-            toolbar, text="↑", command=self._move_pagenumber_up,
-            height=32, width=36,
-            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
-            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
-        )
-        self.pn_move_up_btn.pack(side="left", padx=(0, 2), pady=6)
-
-        self.pn_move_down_btn = ctk.CTkButton(
-            toolbar, text="↓", command=self._move_pagenumber_down,
-            height=32, width=36,
-            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
-            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
-        )
-        self.pn_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
-
-        self.pn_count_label = ctk.CTkLabel(
-            toolbar, text="ファイル数: 0",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13), text_color=CLR_GRAY_TEXT
-        )
-        self.pn_count_label.pack(side="right", padx=10, pady=6)
-
-        # ── ファイルリスト ──
-        self.pagenumber_draggable_list = DraggableFileList(
-            self.pagenumber_tab, height=200,
-            label_text="📄 ページ番号を挿入するPDFファイル（ドラッグで並び替え可能）"
-        )
-        self.pagenumber_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
-        self.pagenumber_draggable_list.on_selection_change = self._on_pagenumber_selection_change
-        self.pagenumber_draggable_list.on_order_change = self._on_pagenumber_order_change
-
-        self.pn_list_msg = ctk.CTkLabel(
-            self.pagenumber_draggable_list,
-            text="📄 PDFファイルをここにドラッグ&ドロップしてください\n\n"
-                 "・複数ファイルを追加した場合は結合してからページ番号を挿入します\n"
-                 "・ドラッグで順序変更、↑↓ボタンでも調整可能",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), justify="left"
-        )
-        self.pn_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
         # ── 実行ボタン ──
         self.pn_execute_btn = ctk.CTkButton(
@@ -1971,92 +1929,61 @@ class UnifiedWindow:
             height=40, state="disabled",
             fg_color="#553C9A", hover_color="#3D2B6E",
         )
-        self.pn_execute_btn.pack(pady=(10, 10))
+        self.pn_execute_btn.pack(pady=(4, 8))
 
         self.pn_progress = ctk.CTkProgressBar(self.pagenumber_tab)
         self.pn_progress.pack(fill="x", padx=15, pady=(0, 8))
         self.pn_progress.set(0)
 
         self.pn_status = ctk.CTkLabel(
-            self.pagenumber_tab,
-            text="PDFファイルを追加してください",
+            self.pagenumber_tab, text="PDFファイルを選択してください",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.pn_status.pack(pady=(0, 10))
 
     # ── ファイル操作 ─────────────────────────────────────────────
 
-    def _select_pagenumber_files(self) -> None:
-        files = fd.askopenfilenames(
+    def _select_pagenumber_file(self) -> None:
+        file = fd.askopenfilename(
             title="ページ番号を挿入するPDFを選択",
             filetypes=[("PDFファイル", "*.pdf"), ("すべてのファイル", "*.*")]
         )
-        if files:
-            self._add_pagenumber_files(list(files))
+        if file:
+            self._set_pagenumber_file(file)
 
     def _add_pagenumber_files(self, paths: List[str]) -> None:
+        """D&Dコールバック（最初のPDFのみ使用）"""
         pdf_files = [p for p in paths if Path(p).suffix.lower() == '.pdf' and Path(p).is_file()]
-        new_files = [f for f in pdf_files if f not in self.pagenumber_files]
-        if new_files:
-            self.pagenumber_draggable_list.add_files(new_files)
-            self.pagenumber_files.extend(new_files)
-            self._update_pagenumber_display()
+        if pdf_files:
+            self._set_pagenumber_file(pdf_files[0])
 
-    def _delete_selected_pagenumber(self) -> None:
-        selected = self.pagenumber_draggable_list.get_selected_files()
-        if not selected:
-            return
-        if messagebox.askyesno("確認", f"{len(selected)}件のファイルを削除しますか？"):
-            self.pagenumber_draggable_list.remove_selected_files()
-            self._update_pagenumber_display()
+    def _set_pagenumber_file(self, path: str) -> None:
+        self.pagenumber_files = [path]
+        name = Path(path).name
+        display = name if len(name) <= 40 else name[:37] + "..."
+        self.pn_file_label.configure(text=f"📄  {display}")
+        self.pn_drop_label.pack_forget()
+        self.pn_select_btn.pack_forget()
+        self.pn_file_frame.pack(fill="x", padx=12, pady=12)
+        self.pn_execute_btn.configure(state="normal")
+        self.pn_status.configure(text=f"選択済み: {name}")
 
-    def _clear_pagenumber_files(self) -> None:
-        self.pagenumber_draggable_list.clear_files()
-        self.pagenumber_files.clear()
-        self._update_pagenumber_display()
-
-    def _move_pagenumber_up(self) -> None:
-        if not self.pagenumber_draggable_list.move_selected_up():
-            self.pn_status.configure(text="これ以上上に移動できません")
-
-    def _move_pagenumber_down(self) -> None:
-        if not self.pagenumber_draggable_list.move_selected_down():
-            self.pn_status.configure(text="これ以上下に移動できません")
-
-    def _on_pagenumber_selection_change(self, selected: List[str]) -> None:
-        has = len(selected) > 0
-        self.pn_delete_btn.configure(state="normal" if has else "disabled")
-        self.pn_move_up_btn.configure(state="normal" if has else "disabled")
-        self.pn_move_down_btn.configure(state="normal" if has else "disabled")
-
-    def _on_pagenumber_order_change(self, file_paths: List[str]) -> None:
-        self.pagenumber_files = file_paths.copy()
-        self._update_pagenumber_display()
-
-    def _update_pagenumber_display(self) -> None:
-        current = self.pagenumber_draggable_list.get_files()
-        self.pagenumber_files = current
-        if current:
-            self.pn_list_msg.pack_forget()
-            self.pn_clear_btn.configure(state="normal")
-            self.pn_execute_btn.configure(state="normal")
-            self.pn_count_label.configure(text=f"ファイル数: {len(current)}")
-            self.pn_status.configure(text=f"{len(current)}個のPDFが追加されました")
-        else:
-            self.pn_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
-            self.pn_clear_btn.configure(state="disabled")
-            self.pn_execute_btn.configure(state="disabled")
-            self.pn_count_label.configure(text="ファイル数: 0")
-            self.pn_status.configure(text="PDFファイルを追加してください")
+    def _clear_pagenumber_file(self) -> None:
+        self.pagenumber_files = []
+        self.pn_file_frame.pack_forget()
+        self.pn_drop_label.pack(expand=True)
+        self.pn_select_btn.pack(pady=(0, 20))
+        self.pn_execute_btn.configure(state="disabled")
+        self.pn_status.configure(text="PDFファイルを選択してください")
+        self.pn_progress.set(0)
 
     # ── 実行 ────────────────────────────────────────────────────
 
     def _start_pagenumber_insertion(self) -> None:
         if not self.pagenumber_files:
             return
-
         try:
-            start_page = int(self.pn_start_page_var.get())
+            start_page   = int(self.pn_start_page_var.get())
             start_number = int(self.pn_start_number_var.get())
         except ValueError:
             messagebox.showwarning("入力エラー", "開始ページと開始番号には数字を入力してください。")
@@ -2065,7 +1992,8 @@ class UnifiedWindow:
         output_path = fd.asksaveasfilename(
             title="保存先を選択",
             filetypes=[("PDFファイル", "*.pdf")],
-            defaultextension=".pdf"
+            defaultextension=".pdf",
+            initialfile=Path(self.pagenumber_files[0]).stem + "_ページ番号付き.pdf"
         )
         if not output_path:
             return
@@ -2074,16 +2002,15 @@ class UnifiedWindow:
         self.pn_status.configure(text="処理中...")
         self.pn_progress.set(0)
 
-        thread = threading.Thread(
+        threading.Thread(
             target=self._run_pagenumber_insertion,
-            args=(output_path, start_page, start_number)
-        )
-        thread.daemon = True
-        thread.start()
+            args=(output_path, start_page, start_number),
+            daemon=True
+        ).start()
 
     def _run_pagenumber_insertion(self, output_path: str, start_page: int, start_number: int) -> None:
         try:
-            def progress_callback(message, progress):
+            def on_progress(message, progress):
                 self.root.after(0, lambda: self.pn_progress.set(progress / 100))
                 self.root.after(0, lambda: self.pn_status.configure(text=message))
 
@@ -2094,7 +2021,7 @@ class UnifiedWindow:
                 add_page_numbers=True,
                 start_page=start_page,
                 start_number=start_number,
-                progress_callback=progress_callback
+                progress_callback=on_progress
             )
             self.root.after(0, lambda: self._on_pagenumber_complete(result))
         except Exception as e:
@@ -2108,13 +2035,12 @@ class UnifiedWindow:
         self.pn_progress.set(1.0)
         if result.success:
             msg = (f"ページ番号挿入が完了しました！\n\n"
-                   f"• 処理ファイル数: {len(result.processed_files)}個\n"
                    f"• 総ページ数: {result.total_pages}ページ\n"
                    f"• 出力ファイル: {Path(result.output_path).name}\n"
                    f"• 処理時間: {result.processing_time:.1f}秒")
             self.pn_status.configure(text=f"完了: {result.total_pages}ページ")
             self._show_and_open_results("ページ番号挿入完了", msg, [result.output_path])
-            self._clear_pagenumber_files()
+            self._clear_pagenumber_file()
         else:
             messagebox.showerror("エラー", f"処理に失敗しました。\n\n{result.error_message}")
             self.pn_status.configure(text="エラーが発生しました")
