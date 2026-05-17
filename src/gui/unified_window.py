@@ -14,6 +14,8 @@ from pathlib import Path
 import sys
 import subprocess
 import os
+import shutil
+import tempfile
 
 try:
     from tkinterdnd2 import TkinterDnD
@@ -34,6 +36,7 @@ from ..utils.security import SecurityValidator, InputValidator
 from .draggable_list import DraggableFileList
 from .update_banner import UpdateBanner
 from .help_dialog import HelpDialog
+from .preview_dialog import PDFPreviewDialog, render_doc_number_preview, render_page_number_preview
 from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
@@ -41,6 +44,10 @@ from .theme import (
     CLR_WHITE, get_file_type_badge,
     FONT_FAMILY,
     TAB_CONVERSION, TAB_COMBINATION, TAB_DOCUMENT, TAB_PAGENUMBER, TAB_INACTIVE,
+    CLR_CONV_PRIMARY, CLR_CONV_HOVER,
+    CLR_COMB_PRIMARY, CLR_COMB_HOVER,
+    CLR_DOC_PRIMARY,  CLR_DOC_HOVER,
+    CLR_PN_PRIMARY,   CLR_PN_HOVER,
 )
 from ..utils.error_handler import error_handler, ErrorSeverity
 from ..core.converter import PDFConverter
@@ -244,29 +251,11 @@ class UnifiedWindow:
     def _create_conversion_ui(self) -> None:
         """PDF変換タブUI"""
         # 説明ラベル
-        desc_label = ctk.CTkLabel(
+        ctk.CTkLabel(
             self.conversion_tab,
             text="Office文書・画像ファイルをPDFに変換します",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        )
-        desc_label.pack(pady=(10, 5))
-
-        # Excelシート分割オプション
-        self.excel_options_frame = ctk.CTkFrame(
-            self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
-            border_width=1, border_color=CLR_BORDER, corner_radius=6
-        )
-        self.excel_options_frame.pack(fill="x", padx=15, pady=(0, 8))
-
-        self.split_excel_sheets_switch = ctk.CTkSwitch(
-            self.excel_options_frame,
-            text="Excelシートが複数ある場合は、すべてのシートをそれぞれPDFに変換する",
-            variable=self.split_excel_sheets_var,
-            onvalue=True, offvalue=False,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
-            progress_color=CLR_PRIMARY
-        )
-        self.split_excel_sheets_switch.pack(side="left", padx=(10, 8), pady=6)
+        ).pack(pady=(10, 5))
 
         # ── ツールバー ──
         toolbar = ctk.CTkFrame(self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
@@ -274,10 +263,10 @@ class UnifiedWindow:
         toolbar.pack(fill="x", padx=15, pady=(0, 5))
 
         self.conversion_select_btn = ctk.CTkButton(
-            toolbar, text="ファイル追加",
+            toolbar, text="ファイル選択",
             command=self._select_conversion_files,
-            height=32, width=110,
-            fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
+            height=32, width=100,
+            fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
             font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
         )
         self.conversion_select_btn.pack(side="left", padx=(8, 4), pady=6)
@@ -337,30 +326,45 @@ class UnifiedWindow:
             justify="left"
         )
         self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        
 
+        # Excelシート分割オプション（ファイルリスト下）
+        self.excel_options_frame = ctk.CTkFrame(
+            self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=1, border_color=CLR_BORDER, corner_radius=6
+        )
+        self.excel_options_frame.pack(fill="x", padx=15, pady=(0, 5))
 
+        self.split_excel_sheets_switch = ctk.CTkSwitch(
+            self.excel_options_frame,
+            text="Excelシートが複数ある場合は、すべてのシートをそれぞれPDFに変換する",
+            variable=self.split_excel_sheets_var,
+            onvalue=True, offvalue=False,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_CONV_PRIMARY
+        )
+        self.split_excel_sheets_switch.pack(side="left", padx=(10, 8), pady=6)
 
         # 変換実行ボタン
         self.conversion_convert_btn = ctk.CTkButton(
             self.conversion_tab,
-            text="🔄 PDF変換開始",
+            text="🔄 PDF変換実行",
             command=self._start_conversion,
-            height=40,
-            state="disabled"
+            height=40, state="disabled",
+            fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
+            text_color="white", text_color_disabled="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
-        self.conversion_convert_btn.pack(pady=(10, 10))
+        self.conversion_convert_btn.pack(pady=(8, 8))
 
         # プログレスバー
         self.conversion_progress = ctk.CTkProgressBar(self.conversion_tab)
         self.conversion_progress.pack(fill="x", padx=15, pady=(0, 8))
         self.conversion_progress.set(0)
-        
+
         # ステータスラベル
         self.conversion_status = ctk.CTkLabel(
             self.conversion_tab,
-            text="ファイルを追加してください",
+            text="ファイルを選択してください",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.conversion_status.pack(pady=(0, 10))
@@ -381,10 +385,10 @@ class UnifiedWindow:
         toolbar.pack(fill="x", padx=15, pady=(8, 5))
 
         self.combination_select_btn = ctk.CTkButton(
-            toolbar, text="PDF追加",
+            toolbar, text="PDF選択",
             command=self._select_combination_files,
             height=32, width=90,
-            fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
+            fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
             font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
         )
         self.combination_select_btn.pack(side="left", padx=(8, 4), pady=6)
@@ -459,6 +463,7 @@ class UnifiedWindow:
         # オプションフレーム（白紙挿入 + ページ番号）
         self.add_blank_page_var = ctk.BooleanVar()
         self.add_page_number_var = ctk.BooleanVar()
+        self.combine_pn_binding_compat_var = ctk.BooleanVar(value=False)
 
         options_frame = ctk.CTkFrame(
             self.combination_tab, fg_color=CLR_TOOLBAR_BG,
@@ -476,7 +481,7 @@ class UnifiedWindow:
             variable=self.add_blank_page_var,
             onvalue=True, offvalue=False,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-            progress_color=CLR_PRIMARY
+            progress_color=CLR_COMB_PRIMARY
         )
         self.add_blank_page_switch.pack(side="left")
 
@@ -490,7 +495,7 @@ class UnifiedWindow:
             variable=self.add_page_number_var,
             onvalue=True, offvalue=False,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-            progress_color=CLR_PRIMARY,
+            progress_color=CLR_COMB_PRIMARY,
             command=self._toggle_page_number_options
         )
         self.add_page_number_switch.pack(side="left")
@@ -526,6 +531,20 @@ class UnifiedWindow:
         )
         self.start_number_entry.pack(side="left")
 
+        # 左綴じ対応スイッチ（ページ番号オプションの下）
+        binding_row = ctk.CTkFrame(options_frame, fg_color="transparent")
+        binding_row.pack(fill="x", padx=(30, 8), pady=(0, 6))
+
+        self.combine_pn_binding_switch = ctk.CTkSwitch(
+            binding_row,
+            text="左綴じ対応（A3横Z折り・A3縦・A4横ページのみ位置変更）",
+            variable=self.combine_pn_binding_compat_var,
+            onvalue=True, offvalue=False,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_COMB_PRIMARY
+        )
+        self.combine_pn_binding_switch.pack(side="left")
+
         self._toggle_page_number_options()
         
         # 結合実行ボタン
@@ -533,8 +552,10 @@ class UnifiedWindow:
             self.combination_tab,
             text="📋 PDF結合実行",
             command=self._start_combination,
-            height=40,
-            state="disabled"
+            height=40, state="disabled",
+            fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
+            text_color="white", text_color_disabled="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.combination_combine_btn.pack(pady=(10, 10))
         
@@ -546,125 +567,29 @@ class UnifiedWindow:
         # ステータスラベル
         self.combination_status = ctk.CTkLabel(
             self.combination_tab,
-            text="PDFファイルを追加してください",
+            text="PDFファイルを選択してください",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.combination_status.pack(pady=(0, 10))
 
     def _create_document_number_ui(self) -> None:
         """資料NO挿入タブUI"""
-        # 説明ラベル
-        desc_label = ctk.CTkLabel(
+        ctk.CTkLabel(
             self.document_number_tab,
             text="PDFファイルのヘッダー右上に、資料や参考などを挿入します",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        )
-        desc_label.pack(pady=(10, 5))
-
-        # 設定フレーム
-        settings_frame = ctk.CTkFrame(
-            self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
-            border_width=1, border_color=CLR_BORDER, corner_radius=6
-        )
-        settings_frame.pack(fill="x", padx=15, pady=(10, 5))
-
-        # 行1: 挿入文字 + 開始番号
-        row1 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row1.pack(fill="x", padx=8, pady=(8, 4))
-
-        ctk.CTkLabel(
-            row1, text="文字選択:",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-            text_color=CLR_DARK_TEXT
-        ).pack(side="left", padx=(0, 6))
-
-        self.prefix_var = ctk.StringVar(value="資料")
-        self.prefix_btn = ctk.CTkSegmentedButton(
-            row1, values=["資料", "参考"],
-            variable=self.prefix_var,
-            command=self._on_prefix_changed,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        )
-        self.prefix_btn.pack(side="left", padx=(0, 20))
-
-        self.number_label = ctk.CTkLabel(
-            row1, text="開始番号:",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-            text_color=CLR_DARK_TEXT
-        )
-        self.number_label.pack(side="left", padx=(0, 6))
-
-        self.number_var = ctk.StringVar(value="1")
-        self.number_entry = ctk.CTkEntry(
-            row1, textvariable=self.number_var,
-            placeholder_text="1", width=70,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        )
-        self.number_entry.pack(side="left")
-        self.number_var.trace("w", self._on_numbering_settings_changed)
-
-        # 行2: 番号方式 + プレビュー
-        row2 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row2.pack(fill="x", padx=8, pady=(0, 8))
-
-        ctk.CTkLabel(
-            row2, text="番号方式:",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-            text_color=CLR_DARK_TEXT
-        ).pack(side="left", padx=(0, 6))
-
-        self.numbering_type_var = ctk.StringVar(value="連番")
-        self.numbering_type_menu = ctk.CTkOptionMenu(
-            row2,
-            variable=self.numbering_type_var,
-            values=["連番", "ハイフン連番", "固定番号", "番号なし"],
-            width=140,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-            command=self._on_numbering_type_changed
-        )
-        self.numbering_type_menu.pack(side="left", padx=(0, 16))
-
-        self.preview_label = ctk.CTkLabel(
-            row2, text="→ 「資料1, 資料2, 資料3...」",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
-            text_color=CLR_GRAY_TEXT
-        )
-        self.preview_label.pack(side="left")
-
-        # 行3: ファイル名変更オプション
-        row3 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row3.pack(fill="x", padx=8, pady=(0, 4))
-
-        self.rename_file_var = ctk.BooleanVar(value=False)
-        ctk.CTkSwitch(
-            row3, text="ファイル名の先頭に資料番号を追加する（例: 【資料１】ファイル名.pdf）",
-            variable=self.rename_file_var,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
-            progress_color=CLR_PRIMARY
-        ).pack(side="left")
-
-        # 行4: A3縦ページ左綴じ対応オプション
-        row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row4.pack(fill="x", padx=8, pady=(0, 8))
-
-        self.a3_compat_var = ctk.BooleanVar(value=False)
-        ctk.CTkSwitch(
-            row4, text="A3縦・A4横ページを左綴じ対応位置（右下）に挿入",
-            variable=self.a3_compat_var,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
-            progress_color=CLR_PRIMARY
-        ).pack(side="left")
+        ).pack(pady=(10, 5))
 
         # ── ツールバー ──
         toolbar = ctk.CTkFrame(self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
                                 border_width=1, border_color=CLR_BORDER, corner_radius=6)
-        toolbar.pack(fill="x", padx=15, pady=(8, 5))
+        toolbar.pack(fill="x", padx=15, pady=(0, 5))
 
         self.document_select_btn = ctk.CTkButton(
-            toolbar, text="PDFファイル選択",
+            toolbar, text="PDF選択",
             command=self._select_document_number_files,
-            height=32, width=120,
-            fg_color=CLR_PRIMARY, hover_color=CLR_ACCENT,
+            height=32, width=90,
+            fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
             font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
         )
         self.document_select_btn.pack(side="left", padx=(8, 4), pady=6)
@@ -723,28 +648,137 @@ class UnifiedWindow:
         )
         self.document_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
 
-        # ドラッグリストのコールバック設定
         self.document_draggable_list.on_selection_change = self._on_document_selection_change
         self.document_draggable_list.on_order_change = self._on_document_order_change
 
-        # 初期メッセージ（空の時に表示）
         self.document_list_msg = ctk.CTkLabel(
             self.document_draggable_list,
-            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・フォント: Meiryo、四角囲い文字で表示\n・全ての回転角度（0°, 90°, 180°, 270°）に対応\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
+            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             justify="left"
         )
         self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # 実行ボタン
+        # ── 設定フレーム（ファイルリスト下） ──
+        settings_frame = ctk.CTkFrame(
+            self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=1, border_color=CLR_BORDER, corner_radius=6
+        )
+        settings_frame.pack(fill="x", padx=15, pady=(0, 5))
+
+        # 行1: 挿入文字 + 開始番号
+        row1 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row1.pack(fill="x", padx=8, pady=(8, 4))
+
+        ctk.CTkLabel(
+            row1, text="文字選択:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            text_color=CLR_DARK_TEXT
+        ).pack(side="left", padx=(0, 6))
+
+        self.prefix_var = ctk.StringVar(value="資料")
+        self.prefix_btn = ctk.CTkSegmentedButton(
+            row1, values=["資料", "参考"],
+            variable=self.prefix_var,
+            command=self._on_prefix_changed,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        )
+        self.prefix_btn.pack(side="left", padx=(0, 20))
+
+        self.number_label = ctk.CTkLabel(
+            row1, text="開始番号:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            text_color=CLR_DARK_TEXT
+        )
+        self.number_label.pack(side="left", padx=(0, 6))
+
+        self.number_var = ctk.StringVar(value="1")
+        self.number_entry = ctk.CTkEntry(
+            row1, textvariable=self.number_var,
+            placeholder_text="1", width=70,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        )
+        self.number_entry.pack(side="left")
+        self.number_var.trace("w", self._on_numbering_settings_changed)
+
+        # 行2: 番号方式 + プレビュー
+        row2 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row2.pack(fill="x", padx=8, pady=(0, 6))
+
+        ctk.CTkLabel(
+            row2, text="番号方式:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            text_color=CLR_DARK_TEXT
+        ).pack(side="left", padx=(0, 6))
+
+        self.numbering_type_var = ctk.StringVar(value="連番")
+        self.numbering_type_menu = ctk.CTkOptionMenu(
+            row2,
+            variable=self.numbering_type_var,
+            values=["連番", "ハイフン連番", "固定番号", "番号なし"],
+            width=140,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            command=self._on_numbering_type_changed
+        )
+        self.numbering_type_menu.pack(side="left", padx=(0, 16))
+
+        self.preview_label = ctk.CTkLabel(
+            row2, text="→ 「資料1, 資料2, 資料3...」",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            text_color=CLR_GRAY_TEXT
+        )
+        self.preview_label.pack(side="left")
+
+        # 行3: ファイル名変更オプション
+        row3 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row3.pack(fill="x", padx=8, pady=(0, 4))
+
+        self.rename_file_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            row3, text="ファイル名の先頭に資料番号を追加する（例: 【資料１】ファイル名.pdf）",
+            variable=self.rename_file_var,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_DOC_PRIMARY
+        ).pack(side="left")
+
+        # 行4: A3縦ページ左綴じ対応オプション
+        row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row4.pack(fill="x", padx=8, pady=(0, 8))
+
+        self.a3_compat_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            row4, text="A3縦・A4横ページを左綴じ対応位置（右下）に挿入",
+            variable=self.a3_compat_var,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_DOC_PRIMARY
+        ).pack(side="left")
+
+        # 実行ボタン + プレビューボタン
+        doc_btn_frame = ctk.CTkFrame(self.document_number_tab, fg_color="transparent")
+        doc_btn_frame.pack(pady=(8, 8))
+
+        self.document_preview_btn = ctk.CTkButton(
+            doc_btn_frame,
+            text="🔍 プレビュー",
+            command=self._show_document_number_preview,
+            height=40, width=130, state="disabled",
+            fg_color="transparent", border_width=1,
+            text_color=CLR_DOC_PRIMARY,
+            hover_color=CLR_LIGHT_BG,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        )
+        self.document_preview_btn.pack(side="left", padx=(0, 8))
+
         self.document_execute_btn = ctk.CTkButton(
-            self.document_number_tab,
+            doc_btn_frame,
             text="📄 資料NO挿入実行",
             command=self._start_document_number_insertion,
-            height=40,
-            state="disabled"
+            height=40, state="disabled",
+            fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
+            text_color="white", text_color_disabled="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
-        self.document_execute_btn.pack(pady=(10, 10))
+        self.document_execute_btn.pack(side="left")
 
         # プログレスバー
         self.document_progress = ctk.CTkProgressBar(self.document_number_tab)
@@ -754,12 +788,10 @@ class UnifiedWindow:
         # ステータスラベル
         self.document_status = ctk.CTkLabel(
             self.document_number_tab,
-            text="PDFファイルを追加して資料番号を入力してください",
+            text="PDFファイルを選択して資料番号を入力してください",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
         self.document_status.pack(pady=(0, 10))
-
-        # 入力フィールドの変更監視は新しいメソッドで処理
 
     def _open_folder(self, folder_path: str):
         """指定されたフォルダをエクスプローラーで開く"""
@@ -783,6 +815,7 @@ class UnifiedWindow:
         self.start_page_unit.configure(state=state)
         self.start_number_label.configure(state=state)
         self.start_number_entry.configure(state=state)
+        self.combine_pn_binding_switch.configure(state=state)
     
     def _setup_drag_drop(self) -> None:
         """ドラッグ&ドロップ機能設定"""
@@ -1170,7 +1203,9 @@ class UnifiedWindow:
             ready = bool(self.document_number_files)
         else:
             ready = bool(self.document_number_files and self.number_var.get().strip())
-        self.document_execute_btn.configure(state="normal" if ready else "disabled")
+        state = "normal" if ready else "disabled"
+        self.document_execute_btn.configure(state=state)
+        self.document_preview_btn.configure(state="normal" if self.document_number_files else "disabled")
 
     def _update_document_number_display(self) -> None:
         """資料NO挿入タブ表示更新"""
@@ -1191,6 +1226,7 @@ class UnifiedWindow:
             # ファイルがない場合は初期メッセージを表示
             self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
             self.document_execute_btn.configure(state="disabled")
+            self.document_preview_btn.configure(state="disabled")
             self.document_clear_btn.configure(state="disabled")
             self.document_count_label.configure(text="ファイル数: 0")
             self.document_status.configure(text="PDFファイルを追加して連番設定を行ってください")
@@ -1727,19 +1763,20 @@ class UnifiedWindow:
         add_page_numbers = self.add_page_number_var.get()
         start_page = int(self.start_page_var.get())
         start_number = int(self.start_number_var.get())
+        pn_binding_compat = self.combine_pn_binding_compat_var.get() if add_page_numbers else False
 
         # 別スレッドで結合実行
-        thread = threading.Thread(target=self._run_combination, args=(output_path, add_blank_page, add_page_numbers, start_page, start_number))
+        thread = threading.Thread(target=self._run_combination, args=(output_path, add_blank_page, add_page_numbers, start_page, start_number, pn_binding_compat))
         thread.daemon = True
         thread.start()
     
-    def _run_combination(self, output_path: str, add_blank_page: bool, add_page_numbers: bool, start_page: int, start_number: int) -> None:
+    def _run_combination(self, output_path: str, add_blank_page: bool, add_page_numbers: bool, start_page: int, start_number: int, pn_binding_compat: bool = False) -> None:
         """結合実行（別スレッド）"""
         try:
             def progress_callback(message, progress):
                 self.root.after(0, lambda: self.combination_progress.set(progress / 100))
                 self.root.after(0, lambda: self.combination_status.configure(text=message))
-            
+
             result = self.pdf_combiner.combine_pdfs(
                 self.combination_files.copy(),
                 output_path,
@@ -1747,7 +1784,8 @@ class UnifiedWindow:
                 add_page_numbers,
                 start_page,
                 start_number,
-                progress_callback
+                progress_callback,
+                page_number_binding_compat=pn_binding_compat
             )
             
             # UI更新
@@ -1860,6 +1898,31 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(pady=(10, 5))
 
+        # ── ツールバー ──
+        pn_toolbar = ctk.CTkFrame(self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
+                                  border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        pn_toolbar.pack(fill="x", padx=15, pady=(0, 5))
+
+        self.pn_select_btn = ctk.CTkButton(
+            pn_toolbar, text="PDF選択",
+            command=self._select_pagenumber_file,
+            height=32, width=90,
+            fg_color=CLR_PN_PRIMARY, hover_color=CLR_PN_HOVER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
+        )
+        self.pn_select_btn.pack(side="left", padx=(8, 4), pady=6)
+
+        self.pn_clear_btn = ctk.CTkButton(
+            pn_toolbar, text="クリア",
+            command=self._clear_pagenumber_file,
+            height=32, width=70,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            state="disabled"
+        )
+        self.pn_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
         # ── ファイル選択エリア ──
         self.pn_drop_frame = ctk.CTkFrame(
             self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
@@ -1869,21 +1932,11 @@ class UnifiedWindow:
 
         self.pn_drop_label = ctk.CTkLabel(
             self.pn_drop_frame,
-            text="📄 PDFファイルをここにドラッグ&ドロップ\n\nまたは",
+            text="📄 PDFファイルをここにドラッグ&ドロップ",
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
             text_color=CLR_GRAY_TEXT, justify="center"
         )
         self.pn_drop_label.pack(expand=True)
-
-        self.pn_select_btn = ctk.CTkButton(
-            self.pn_drop_frame,
-            text="ファイルを選択",
-            command=self._select_pagenumber_file,
-            width=140, height=34,
-            fg_color="#553C9A", hover_color="#3D2B6E",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
-        )
-        self.pn_select_btn.pack(pady=(0, 20))
 
         # 選択済みファイル表示（初期は非表示）
         self.pn_file_frame = ctk.CTkFrame(
@@ -1936,15 +1989,46 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left")
 
-        # ── 実行ボタン ──
+        # 左綴じ対応スイッチ
+        binding_row2 = ctk.CTkFrame(opt_frame, fg_color="transparent")
+        binding_row2.pack(fill="x", padx=12, pady=(0, 8))
+
+        self.pn_binding_compat_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            binding_row2,
+            text="左綴じ対応（A3横Z折り・A3縦・A4横ページのみ位置変更）",
+            variable=self.pn_binding_compat_var,
+            onvalue=True, offvalue=False,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color="#553C9A"
+        ).pack(side="left")
+
+        # ── 実行ボタン + プレビューボタン ──
+        pn_btn_frame = ctk.CTkFrame(self.pagenumber_tab, fg_color="transparent")
+        pn_btn_frame.pack(pady=(4, 8))
+
+        self.pn_preview_btn = ctk.CTkButton(
+            pn_btn_frame,
+            text="🔍 プレビュー",
+            command=self._show_page_number_preview,
+            height=40, width=130, state="disabled",
+            fg_color="transparent", border_width=1,
+            text_color="#553C9A",
+            hover_color=CLR_LIGHT_BG,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        )
+        self.pn_preview_btn.pack(side="left", padx=(0, 8))
+
         self.pn_execute_btn = ctk.CTkButton(
-            self.pagenumber_tab,
+            pn_btn_frame,
             text="📄 ページ番号挿入実行",
             command=self._start_pagenumber_insertion,
             height=40, state="disabled",
-            fg_color="#553C9A", hover_color="#3D2B6E",
+            fg_color=CLR_PN_PRIMARY, hover_color=CLR_PN_HOVER,
+            text_color="white", text_color_disabled="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
-        self.pn_execute_btn.pack(pady=(4, 8))
+        self.pn_execute_btn.pack(side="left")
 
         self.pn_progress = ctk.CTkProgressBar(self.pagenumber_tab)
         self.pn_progress.pack(fill="x", padx=15, pady=(0, 8))
@@ -1978,17 +2062,19 @@ class UnifiedWindow:
         display = name if len(name) <= 40 else name[:37] + "..."
         self.pn_file_label.configure(text=f"📄  {display}")
         self.pn_drop_label.pack_forget()
-        self.pn_select_btn.pack_forget()
         self.pn_file_frame.pack(fill="x", padx=12, pady=12)
+        self.pn_clear_btn.configure(state="normal")
         self.pn_execute_btn.configure(state="normal")
+        self.pn_preview_btn.configure(state="normal")
         self.pn_status.configure(text=f"選択済み: {name}")
 
     def _clear_pagenumber_file(self) -> None:
         self.pagenumber_files = []
         self.pn_file_frame.pack_forget()
         self.pn_drop_label.pack(expand=True)
-        self.pn_select_btn.pack(pady=(0, 20))
+        self.pn_clear_btn.configure(state="disabled")
         self.pn_execute_btn.configure(state="disabled")
+        self.pn_preview_btn.configure(state="disabled")
         self.pn_status.configure(text="PDFファイルを選択してください")
         self.pn_progress.set(0)
 
@@ -2004,47 +2090,90 @@ class UnifiedWindow:
             messagebox.showwarning("入力エラー", "開始ページと開始番号には数字を入力してください。")
             return
 
-        output_path = fd.asksaveasfilename(
-            title="保存先を選択",
-            filetypes=[("PDFファイル", "*.pdf")],
-            defaultextension=".pdf",
-            initialfile=Path(self.pagenumber_files[0]).stem + "_ページ番号付き.pdf"
+        pdf_path = self.pagenumber_files[0]
+        confirmed = messagebox.askyesno(
+            "ページ番号挿入の確認",
+            f"以下の内容でページ番号を挿入しますか？\n\n"
+            f"• 対象ファイル: {Path(pdf_path).name}\n"
+            f"• 開始ページ: {start_page}ページ目から\n"
+            f"• 開始番号: {start_number}\n\n"
+            f"注意: 元ファイルは「元ファイル」フォルダに自動バックアップされ、\n"
+            f"同じファイル名で挿入済みファイルが保存されます。"
         )
-        if not output_path:
+        if not confirmed:
             return
 
         self.pn_execute_btn.configure(state="disabled")
+        self.pn_preview_btn.configure(state="disabled")
         self.pn_status.configure(text="処理中...")
         self.pn_progress.set(0)
 
+        binding_compat = self.pn_binding_compat_var.get()
         threading.Thread(
             target=self._run_pagenumber_insertion,
-            args=(output_path, start_page, start_number),
+            args=(pdf_path, start_page, start_number, binding_compat),
             daemon=True
         ).start()
 
-    def _run_pagenumber_insertion(self, output_path: str, start_page: int, start_number: int) -> None:
+    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False) -> None:
+        tmp_path = None
         try:
             def on_progress(message, progress):
                 self.root.after(0, lambda: self.pn_progress.set(progress / 100))
                 self.root.after(0, lambda: self.pn_status.configure(text=message))
 
+            pdf_path_obj = Path(pdf_path)
+
+            # 同ディレクトリに一時ファイルを作成
+            fd_tmp, tmp_path = tempfile.mkstemp(suffix=".pdf", dir=pdf_path_obj.parent)
+            os.close(fd_tmp)
+
             result = self.pdf_combiner.combine_pdfs(
-                self.pagenumber_files.copy(),
-                output_path,
+                [pdf_path],
+                tmp_path,
                 add_blank_page=False,
                 add_page_numbers=True,
                 start_page=start_page,
                 start_number=start_number,
-                progress_callback=on_progress
+                progress_callback=on_progress,
+                page_number_binding_compat=binding_compat
             )
+
+            if result.success:
+                # 元ファイルをバックアップ
+                backup_dir = pdf_path_obj.parent / "元ファイル"
+                backup_dir.mkdir(exist_ok=True)
+                backup_path = backup_dir / pdf_path_obj.name
+                if backup_path.exists():
+                    backup_path.unlink()
+                shutil.copy2(pdf_path, backup_path)
+                # 一時ファイルで元ファイルを上書き
+                shutil.move(tmp_path, pdf_path)
+                tmp_path = None
+                result.output_path = pdf_path
+            else:
+                try:
+                    Path(tmp_path).unlink()
+                except Exception:
+                    pass
+                tmp_path = None
+
             self.root.after(0, lambda: self._on_pagenumber_complete(result))
+
         except Exception as e:
+            if tmp_path:
+                try:
+                    Path(tmp_path).unlink()
+                except Exception:
+                    pass
             from ..utils.error_handler import ErrorSeverity
             self.root.after(0, lambda: error_handler.handle_error(
                 e, ErrorSeverity.CRITICAL, "ページ番号挿入"
             ))
             self.root.after(0, lambda: self.pn_execute_btn.configure(state="normal"))
+            self.root.after(0, lambda: self.pn_preview_btn.configure(
+                state="normal" if self.pagenumber_files else "disabled"
+            ))
 
     def _on_pagenumber_complete(self, result) -> None:
         self.pn_progress.set(1.0)
@@ -2052,14 +2181,59 @@ class UnifiedWindow:
             msg = (f"ページ番号挿入が完了しました！\n\n"
                    f"• 総ページ数: {result.total_pages}ページ\n"
                    f"• 出力ファイル: {Path(result.output_path).name}\n"
-                   f"• 処理時間: {result.processing_time:.1f}秒")
+                   f"• 処理時間: {result.processing_time:.1f}秒\n\n"
+                   f"元ファイルは「元ファイル」フォルダに保存されました。")
             self.pn_status.configure(text=f"完了: {result.total_pages}ページ")
             self._show_and_open_results("ページ番号挿入完了", msg, [result.output_path])
             self._clear_pagenumber_file()
         else:
             messagebox.showerror("エラー", f"処理に失敗しました。\n\n{result.error_message}")
             self.pn_status.configure(text="エラーが発生しました")
-        self.pn_execute_btn.configure(state="normal")
+            self.pn_execute_btn.configure(state="normal")
+            self.pn_preview_btn.configure(
+                state="normal" if self.pagenumber_files else "disabled"
+            )
+
+    # ── プレビュー ──────────────────────────────────────────────────
+
+    def _show_document_number_preview(self) -> None:
+        """資料NO挿入のプレビューダイアログを開く"""
+        if not self.document_number_files:
+            return
+        pdf_path = self.document_number_files[0]
+        prefix = self.prefix_var.get()
+        number_value = self.number_var.get().strip()
+        numbering_type = self.numbering_type_var.get()
+        a3_compat = self.a3_compat_var.get()
+
+        # 最初のファイルに付く資料番号テキストを構築
+        if numbering_type == "番号なし":
+            doc_text = prefix
+        elif numbering_type == "固定番号":
+            doc_text = f"{prefix}{number_value}"
+        elif numbering_type == "ハイフン連番":
+            doc_text = f"{prefix}{number_value}-1"
+        else:  # 連番
+            start = number_value if number_value else "1"
+            doc_text = f"{prefix}{start}"
+
+        render_fn = lambda: render_doc_number_preview(pdf_path, doc_text, a3_compat)
+        PDFPreviewDialog(self.root, f"プレビュー（資料番号: {doc_text}）", render_fn)
+
+    def _show_page_number_preview(self) -> None:
+        """ページ番号挿入のプレビューダイアログを開く"""
+        if not self.pagenumber_files:
+            return
+        pdf_path = self.pagenumber_files[0]
+        try:
+            start_number = int(self.pn_start_number_var.get())
+        except ValueError:
+            start_number = 1
+        binding_compat = self.pn_binding_compat_var.get()
+        page_number_text = str(start_number)
+
+        render_fn = lambda: render_page_number_preview(pdf_path, page_number_text, binding_compat)
+        PDFPreviewDialog(self.root, f"プレビュー（ページ番号: {page_number_text}）", render_fn)
 
     def _open_help(self) -> None:
         """ヘルプダイアログを開く"""

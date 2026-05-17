@@ -10,13 +10,23 @@ FONT_FAMILY = "Yu Gothic UI"
 
 # ── タブカラー ───────────────────────────────────────────────
 TAB_CONVERSION  = ("#2B6CB0", "#1A4A7A")   # (active, hover)  PDF変換  青
-TAB_COMBINATION = ("#276749", "#1C4D36")   # PDF結合  緑
-TAB_DOCUMENT    = ("#C05621", "#963D15")   # 資料NO   オレンジ
+TAB_COMBINATION = ("#C05621", "#963D15")   # PDF結合  オレンジ
+TAB_DOCUMENT    = ("#276749", "#1C4D36")   # 資料NO   緑
 TAB_PAGENUMBER  = ("#553C9A", "#3D2B6E")   # ページ番号  紫
 TAB_INACTIVE    = ("#718096", "#4A5568")   # 非選択タブ  グレー
 
+# ── タブ別アクセントカラー ─────────────────────────────────────
+CLR_CONV_PRIMARY = "#2B6CB0"   # 変換タブ: 青
+CLR_CONV_HOVER   = "#1A4A7A"
+CLR_COMB_PRIMARY = "#C05621"   # 結合タブ: オレンジ
+CLR_COMB_HOVER   = "#963D15"
+CLR_DOC_PRIMARY  = "#276749"   # 資料NOタブ: 緑
+CLR_DOC_HOVER    = "#1C4D36"
+CLR_PN_PRIMARY   = "#553C9A"   # ページ番号タブ: 紫
+CLR_PN_HOVER     = "#3D2B6E"
+
 # ── カラー定数 ──────────────────────────────────────────────
-CLR_PRIMARY       = "#2B6CB0"   # ヘッダー背景・主要アクション
+CLR_PRIMARY       = "#2B6CB0"   # ヘッダー背景・主要アクション（変換タブと同色）
 CLR_ACCENT        = "#3182CE"   # 選択ボーダー・バッジ(Word)
 CLR_LIGHT_BG      = "#EBF8FF"   # 選択行背景
 CLR_LIGHT_BORDER  = "#BEE3F8"   # タブヘッダー下線・リストヘッダー下線

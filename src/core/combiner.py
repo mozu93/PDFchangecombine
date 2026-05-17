@@ -74,12 +74,13 @@ class PDFCombiner:
             logger.warning(f"日本語フォント登録エラー: {e}。Courierで代替します")
             self.font_name = "Courier"
 
-    def combine_pdfs(self, pdf_paths: List[str], output_path: str, 
+    def combine_pdfs(self, pdf_paths: List[str], output_path: str,
                     add_blank_page: bool = False,
                     add_page_numbers: bool = False,
                     start_page: int = 1,
                     start_number: int = 1,
-                    progress_callback: Optional[callable] = None) -> CombineResult:
+                    progress_callback: Optional[callable] = None,
+                    page_number_binding_compat: bool = False) -> CombineResult:
         """
         複数PDFファイルの結合（要件定義書 F-204）
         """
@@ -180,10 +181,27 @@ class PDFCombiner:
 
                     # 回転別の正確な座標計算とrotateパラメータ
                     if original_rotation == 0:
-                        # 0度: 通常の下部中央
-                        x = (page_width - text_width) / 2  # 水平中央
-                        y = page_height - 28.35  # 下端から10mm
-                        rotate_param = 0
+                        # 左綴じ対応モード: ページサイズで挿入位置を切り替え
+                        is_a3_landscape = page_width > page_height and page_width > 1100
+                        is_left_binding = (
+                            (page_width > page_height and page_width <= 1100) or
+                            (page_height > page_width and page_height > 1000)
+                        )
+                        if page_number_binding_compat and is_a3_landscape:
+                            # A3横 Z折り: 左半分の中央下
+                            x = (page_width / 2 - text_width) / 2
+                            y = page_height - 28.35
+                            rotate_param = 0
+                        elif page_number_binding_compat and is_left_binding:
+                            # A4横・A3縦 左綴じ対応: 左端中央に90°CW回転で挿入
+                            x = 28.35
+                            y = (page_height - text_width) / 2
+                            rotate_param = -90
+                        else:
+                            # 通常: 下部中央
+                            x = (page_width - text_width) / 2
+                            y = page_height - 28.35
+                            rotate_param = 0
                     elif original_rotation == 90:
                         # 90度回転: 右側中央が下部になる
                         x = page_width - 28.35  # 右端から10mm
@@ -539,8 +557,8 @@ class PDFCombiner:
             result.error_message = "対象ファイルが指定されていません"
             return result
 
-        if numbering_type not in ["basic", "start_at", "hyphen"]:
-            result.error_message = f"無効な連番タイプ: {numbering_type}. 'basic', 'start_at', 'hyphen'のいずれかを指定してください"
+        if numbering_type not in ["basic", "start_at", "hyphen", "none"]:
+            result.error_message = f"無効な連番タイプ: {numbering_type}. 'basic', 'start_at', 'hyphen', 'none'のいずれかを指定してください"
             return result
 
         try:
