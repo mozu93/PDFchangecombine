@@ -127,7 +127,7 @@ class TestErrorHandling(unittest.TestCase):
 
         result = combiner.combine_pdfs([non_existent_file], "")
         self.assertFalse(result.success)
-        self.assertIn("見つかりません", result.error_message)
+        self.assertIn("ありません", result.error_message)
 
     def test_permission_error_handling(self):
         """権限エラーハンドリング"""

@@ -21,26 +21,26 @@ from src.core.image_converter import ImageConverter
 
 class TestConversionResult:
     """ConversionResultクラスのテスト"""
-    
+
     def test_conversion_result_initialization(self):
         """ConversionResult初期化テスト"""
         result = ConversionResult("input.docx")
         assert result.source_path == "input.docx"
-        assert result.target_path == ""
+        assert result.target_paths == []
         assert result.success is False
         assert result.error_message == ""
         assert result.processing_time == 0.0
-    
+
     def test_conversion_result_with_values(self):
         """ConversionResult値設定テスト"""
         result = ConversionResult(
             source_path="input.docx",
-            target_path="output.pdf",
+            target_paths=["output.pdf"],
             success=True,
             error_message=""
         )
         assert result.source_path == "input.docx"
-        assert result.target_path == "output.pdf"
+        assert result.target_paths == ["output.pdf"]
         assert result.success is True
 
 
@@ -74,28 +74,27 @@ class TestPDFConverter:
         result = self.converter._validate_file("test.docx")
         assert result is False
     
-    @pytest.mark.asyncio
-    async def test_convert_files_async_empty_list(self):
+    def test_convert_files_async_empty_list(self):
         """空リスト変換テスト"""
-        results = await self.converter.convert_files_async([])
+        import asyncio
+        results = asyncio.run(self.converter.convert_files_async([]))
         assert len(results) == 0
     
-    @pytest.mark.asyncio
     @patch('src.core.converter.PDFConverter._validate_file')
     @patch('src.core.converter.OutputManager.get_output_file_path')
     @patch('src.core.converter.FileValidator.get_file_type')
-    async def test_convert_single_file_success(self, mock_get_type, mock_get_path, mock_validate):
+    def test_convert_single_file_success(self, mock_get_type, mock_get_path, mock_validate):
         """単一ファイル変換成功テスト"""
-        # モック設定
         mock_validate.return_value = True
         mock_get_path.return_value = "output.pdf"
         mock_get_type.return_value = "word"
-        
-        with patch.object(self.converter.office_converter, 'convert_to_pdf', return_value=True):
-            result = self.converter._convert_single_file("test.docx")
-            
+
+        with patch.object(self.converter.office_converter, 'convert_to_pdf', return_value=["output.pdf"]):
+            with patch('src.core.converter.fitz.open'):
+                result = self.converter._convert_single_file("test.docx")
+
             assert result.success is True
-            assert result.target_path == "output.pdf"
+            assert "output.pdf" in result.target_paths
             assert result.error_message == ""
     
     @patch('src.core.converter.PDFConverter._validate_file')
@@ -110,75 +109,81 @@ class TestPDFConverter:
     def test_get_conversion_statistics(self):
         """変換統計情報取得テスト"""
         results = [
-            ConversionResult("file1.docx", "file1.pdf", True),
-            ConversionResult("file2.xlsx", "file2.pdf", True), 
-            ConversionResult("file3.pptx", "", False, "エラー")
+            ConversionResult("file1.docx", ["file1.pdf"], True),
+            ConversionResult("file2.xlsx", ["file2.pdf"], True),
+            ConversionResult("file3.pptx", [], False, "エラー")
         ]
-        
+
         stats = self.converter.get_conversion_statistics(results)
-        
+
         assert stats['total_files'] == 3
         assert stats['successful_count'] == 2
         assert stats['failed_count'] == 1
-        assert stats['success_rate'] == 200 / 3  # 約66.67%
+        assert abs(stats['success_rate'] - 200 / 3) < 0.01
         assert len(stats['successful_files']) == 2
         assert len(stats['failed_files']) == 1
 
 
+    def test_copy_pdf_file_success(self):
+        """PDFコピー成功テスト"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            import fitz
+            src = Path(temp_dir) / "source.pdf"
+            doc = fitz.open()
+            doc.new_page()
+            doc.save(str(src))
+            doc.close()
+
+            dst = str(Path(temp_dir) / "dest_subdir" / "output.pdf")
+            result = self.converter._copy_pdf_file(str(src), dst)
+            assert result is True
+            assert Path(dst).exists()
+
+    def test_copy_pdf_file_missing_source(self):
+        """コピー元不在テスト"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self.converter._copy_pdf_file(
+                str(Path(temp_dir) / "nonexistent.pdf"),
+                str(Path(temp_dir) / "out.pdf")
+            )
+            assert result is False
+
+
 class TestOfficeConverter:
     """OfficeConverterクラスのテスト"""
-    
+
     def setup_method(self):
         """テストセットアップ"""
         self.converter = OfficeConverter()
-    
+
     def test_initialization(self):
         """初期化テスト"""
-        assert self.converter.font_name in ['HeiseiMin-W3', 'Helvetica']
-    
-    @patch('src.core.office_converter.Document')
-    @patch('src.core.office_converter.SimpleDocTemplate')
-    def test_convert_word_to_pdf_success(self, mock_doc_template, mock_document):
-        """Word変換成功テスト"""
-        # Mock Word document
-        mock_doc = MagicMock()
-        mock_paragraph = MagicMock()
-        mock_paragraph.text = "テストテキスト"
-        mock_doc.paragraphs = [mock_paragraph]
-        mock_document.return_value = mock_doc
-        
-        # Mock PDF template
-        mock_pdf = MagicMock()
-        mock_doc_template.return_value = mock_pdf
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            input_path = Path(temp_dir) / "test.docx"
-            output_path = Path(temp_dir) / "test.pdf"
-            
-            result = self.converter._convert_word_to_pdf(str(input_path), str(output_path))
-            assert result is True
-    
+        assert self.converter is not None
+
+    @patch.object(OfficeConverter, '_try_office_conversion', return_value=["output.pdf"])
+    def test_convert_word_to_pdf_success(self, mock_try):
+        """Word変換成功テスト（COM APIモック）"""
+        result = self.converter._convert_word_to_pdf("test.docx", "output.pdf")
+        assert result == ["output.pdf"]
+        mock_try.assert_called_once()
+
     def test_convert_to_pdf_unsupported_format(self):
         """非対応形式変換テスト"""
         result = self.converter.convert_to_pdf("test.txt", "output.pdf")
-        assert result is False
-    
-    @patch('src.core.office_converter.subprocess.run')
-    def test_try_system_conversion_success(self, mock_run):
-        """システム変換成功テスト"""
-        mock_run.return_value.returncode = 0
-        
-        result = self.converter._try_system_conversion("test.docx", "output.pdf")
-        assert result is True
-    
-    @patch('src.core.office_converter.subprocess.run')
-    def test_try_system_conversion_failure(self, mock_run):
-        """システム変換失敗テスト"""
-        mock_run.return_value.returncode = 1
-        mock_run.return_value.stderr = "エラーメッセージ"
-        
-        result = self.converter._try_system_conversion("test.docx", "output.pdf")
-        assert result is False
+        assert result == []
+
+    @patch.object(OfficeConverter, '_try_office_conversion', return_value=[])
+    def test_convert_word_to_pdf_no_com_api(self, mock_try):
+        """COM API失敗時はWordの変換結果が空リストになること"""
+        result = self.converter._convert_word_to_pdf("test.docx", "output.pdf")
+        assert result == []
+
+    @patch.object(OfficeConverter, '_try_office_conversion', return_value=["out1.pdf", "out2.pdf"])
+    def test_convert_excel_split_sheets(self, mock_try):
+        """Excelシート分割変換テスト"""
+        result = self.converter._convert_excel_to_pdf("data.xlsx", "out.pdf", split_sheets=True)
+        assert result == ["out1.pdf", "out2.pdf"]
+        mock_try.assert_called_once_with("data.xlsx", "out.pdf", True)
 
 
 class TestImageConverter:

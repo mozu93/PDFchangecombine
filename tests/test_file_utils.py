@@ -42,10 +42,13 @@ class TestFileValidator:
     
     def test_is_supported_file_invalid_extensions(self):
         """非対応形式の判定テスト"""
-        assert FileValidator.is_supported_file("test.pdf") is False
         assert FileValidator.is_supported_file("test.txt") is False
         assert FileValidator.is_supported_file("test.zip") is False
         assert FileValidator.is_supported_file("test.exe") is False
+
+    def test_is_supported_file_pdf(self):
+        """PDF（コピー対応）の判定テスト"""
+        assert FileValidator.is_supported_file("test.pdf") is True
     
     def test_is_supported_file_case_insensitive(self):
         """大文字小文字非依存テスト"""
@@ -59,7 +62,8 @@ class TestFileValidator:
         assert FileValidator.get_file_type("test.xlsx") == "excel"
         assert FileValidator.get_file_type("test.pptx") == "powerpoint"
         assert FileValidator.get_file_type("test.jpg") == "image"
-        assert FileValidator.get_file_type("test.pdf") == "unknown"
+        assert FileValidator.get_file_type("test.pdf") == "pdf"
+        assert FileValidator.get_file_type("test.txt") == "unknown"
     
     @patch('src.utils.file_utils.Path')
     def test_is_valid_file_size(self, mock_path):

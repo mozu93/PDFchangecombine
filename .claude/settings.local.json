@@ -1,0 +1,10 @@
+{
+  "disabledMcpjsonServers": [
+    "serena"
+  ],
+  "permissions": {
+    "allow": [
+      "Skill(sc:load)"
+    ]
+  }
+}

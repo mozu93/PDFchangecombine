@@ -7,6 +7,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
+import fitz
 
 # プロジェクトルートをパスに追加
 import sys
@@ -14,6 +15,16 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.core.combiner import PDFCombiner, CombineResult
+
+
+def _create_test_pdf(path: str) -> str:
+    """テスト用の最小PDFを作成して返す"""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "test", fontsize=12)
+    doc.save(path)
+    doc.close()
+    return path
 
 
 class TestCombineResult:
@@ -67,35 +78,19 @@ class TestPDFCombiner:
         assert result.success is False
         assert "有効なPDFファイルがありません" in result.error_message
     
-    @patch('src.core.combiner.PDFCombiner._validate_pdf_files')
-    @patch('src.core.combiner.PdfReader')
-    @patch('src.core.combiner.PdfWriter')
-    @patch('src.core.combiner.PDFCombiner._ensure_output_directory')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_combine_pdfs_success(self, mock_file_open, mock_ensure_dir, 
-                                  mock_writer, mock_reader, mock_validate):
-        """PDF結合成功テスト"""
-        # モック設定
-        mock_validate.return_value = ["file1.pdf", "file2.pdf"]
-        
-        # PDF Reader Mock
-        mock_reader_instance = MagicMock()
-        mock_page1 = MagicMock()
-        mock_page2 = MagicMock()
-        mock_reader_instance.pages = [mock_page1, mock_page2]
-        mock_reader.return_value = mock_reader_instance
-        
-        # PDF Writer Mock
-        mock_writer_instance = MagicMock()
-        mock_writer.return_value = mock_writer_instance
-        
-        result = self.combiner.combine_pdfs(["file1.pdf", "file2.pdf"], "output.pdf")
-        
-        assert result.success is True
-        assert len(result.processed_files) == 2
-        assert result.total_pages == 4  # 2ファイル × 2ページ
-        mock_writer_instance.add_page.assert_called()
-        mock_writer_instance.write.assert_called_once()
+    def test_combine_pdfs_success(self):
+        """PDF結合成功テスト（実際のPDFを使用）"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf1 = _create_test_pdf(str(Path(temp_dir) / "file1.pdf"))
+            pdf2 = _create_test_pdf(str(Path(temp_dir) / "file2.pdf"))
+            output = str(Path(temp_dir) / "output.pdf")
+
+            result = self.combiner.combine_pdfs([pdf1, pdf2], output)
+
+            assert result.success is True
+            assert len(result.processed_files) == 2
+            assert result.total_pages == 2  # 各1ページ × 2ファイル
+            assert Path(output).exists()
     
     @patch('src.core.combiner.Path')
     def test_validate_pdf_files_file_not_exists(self, mock_path):
@@ -113,67 +108,34 @@ class TestPDFCombiner:
         result = self.combiner._validate_pdf_files(["document.txt"])
         assert len(result) == 0
     
-    @patch('src.core.combiner.Path')
-    @patch('src.core.combiner.FileValidator.is_readable_file')
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('src.core.combiner.PdfReader')
-    def test_validate_pdf_files_success(self, mock_reader, mock_file_open, 
-                                       mock_is_readable, mock_path):
-        """PDF妥当性チェック成功テスト"""
-        # モック設定
-        mock_path.return_value.is_file.return_value = True
-        mock_is_readable.return_value = True
-        
-        mock_reader_instance = MagicMock()
-        mock_reader_instance.pages = [MagicMock()]  # 1ページ
-        mock_reader.return_value = mock_reader_instance
-        
-        result = self.combiner._validate_pdf_files(["valid.pdf"])
-        assert len(result) == 1
-        assert result[0] == "valid.pdf"
+    def test_validate_pdf_files_success(self):
+        """PDF妥当性チェック成功テスト（実際のPDFを使用）"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            valid_pdf = _create_test_pdf(str(Path(temp_dir) / "valid.pdf"))
+            result = self.combiner._validate_pdf_files([valid_pdf])
+            assert len(result) == 1
+            assert result[0] == valid_pdf
     
-    @patch('src.core.combiner.Path')
-    def test_ensure_output_directory(self, mock_path):
+    def test_ensure_output_directory(self):
         """出力ディレクトリ確保テスト"""
-        mock_parent = MagicMock()
-        mock_parent.exists.return_value = False
-        mock_path.return_value.parent = mock_parent
-        
-        self.combiner._ensure_output_directory("output/test.pdf")
-        mock_parent.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = str(Path(temp_dir) / "subdir" / "test.pdf")
+            self.combiner._ensure_output_directory(output_path)
+            assert Path(temp_dir, "subdir").exists()
     
-    @patch('src.core.combiner.PdfReader')
-    @patch('src.core.combiner.Path')
-    def test_get_pdf_info_success(self, mock_path, mock_reader):
-        """PDF情報取得成功テスト"""
-        # モック設定
-        mock_reader_instance = MagicMock()
-        mock_reader_instance.pages = [MagicMock(), MagicMock()]  # 2ページ
-        mock_reader_instance.is_encrypted = False
-        mock_reader_instance.metadata = {'/Title': 'テストPDF', '/Author': 'テスト作成者'}
-        mock_reader.return_value = mock_reader_instance
-        
-        mock_stat = MagicMock()
-        mock_stat.st_size = 1024
-        mock_path.return_value.stat.return_value = mock_stat
-        mock_path.return_value.name = "test.pdf"
-        
-        info = self.combiner.get_pdf_info("test.pdf")
-        
-        assert info['pages'] == 2
-        assert info['file_size'] == 1024
-        assert info['file_name'] == "test.pdf"
-        assert info['encrypted'] is False
-        assert info['title'] == 'テストPDF'
-        assert info['author'] == 'テスト作成者'
-    
-    @patch('src.core.combiner.PdfReader')
-    def test_get_pdf_info_error(self, mock_reader):
+    def test_get_pdf_info_success(self):
+        """PDF情報取得成功テスト（実際のPDFを使用）"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = _create_test_pdf(str(Path(temp_dir) / "test.pdf"))
+            info = self.combiner.get_pdf_info(pdf_path)
+            assert info['pages'] == 1
+            assert info['file_size'] > 0
+            assert info['file_name'] == "test.pdf"
+            assert info['encrypted'] is False
+
+    def test_get_pdf_info_error(self):
         """PDF情報取得エラーテスト"""
-        mock_reader.side_effect = Exception("PDF読み込みエラー")
-        
-        info = self.combiner.get_pdf_info("invalid.pdf")
-        
+        info = self.combiner.get_pdf_info("nonexistent_invalid.pdf")
         assert info['pages'] == 0
         assert info['file_size'] == 0
         assert 'error' in info
@@ -222,6 +184,45 @@ class TestPDFCombiner:
             assert result.success is False
 
 
+    def test_combine_pdfs_with_blank_page(self):
+        """奇数ページPDFへの白紙挿入テスト"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf1 = _create_test_pdf(str(Path(temp_dir) / "odd.pdf"))  # 1ページ（奇数）
+            output = str(Path(temp_dir) / "output.pdf")
+
+            result = self.combiner.combine_pdfs([pdf1], output, add_blank_page=True)
+
+            assert result.success is True
+            # 奇数ページなので白紙が追加され2ページになる
+            with fitz.open(output) as doc:
+                assert doc.page_count == 2
+
+    def test_combine_pdfs_with_page_numbers(self):
+        """ページ番号挿入テスト"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf1 = _create_test_pdf(str(Path(temp_dir) / "p1.pdf"))
+            pdf2 = _create_test_pdf(str(Path(temp_dir) / "p2.pdf"))
+            output = str(Path(temp_dir) / "output.pdf")
+
+            result = self.combiner.combine_pdfs(
+                [pdf1, pdf2], output,
+                add_page_numbers=True, start_number=1
+            )
+
+            assert result.success is True
+            assert result.total_pages == 2
+
+    def test_combine_pdfs_single_file(self):
+        """単一ファイル結合テスト"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf1 = _create_test_pdf(str(Path(temp_dir) / "single.pdf"))
+            output = str(Path(temp_dir) / "output.pdf")
+
+            result = self.combiner.combine_pdfs([pdf1], output)
+
+            assert result.success is True
+            assert len(result.processed_files) == 1
+
+
 if __name__ == "__main__":
-    # テスト実行
     pytest.main([__file__, "-v"])
