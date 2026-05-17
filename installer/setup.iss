@@ -1,6 +1,6 @@
 [Setup]
 AppName=PDF変換・結合ツール
-AppVersion=1.13.0
+AppVersion=1.13.1
 AppPublisher=mozu93
 AppPublisherURL=https://github.com/mozu93/PDFchangecombine
 AppSupportURL=https://github.com/mozu93/PDFchangecombine/issues
@@ -36,14 +36,26 @@ Name: "{autodesktop}\PDF変換・結合ツール"; Filename: "{app}\PDFConverter
 Filename: "{app}\PDFConverter.exe"; Description: "{cm:LaunchProgram,PDF変換・結合ツール}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+{ Shell にアイコン変更を通知するための API 宣言 }
+procedure SHChangeNotify(wEventId: Integer; uFlags: Cardinal; dwItem1, dwItem2: Pointer);
+  external 'SHChangeNotify@shell32.dll stdcall';
+
+const
+  SHCNE_ASSOCCHANGED = $08000000;
+  SHCNF_IDLIST       = $0000;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
 begin
   if CurStep = ssDone then
   begin
-    { インストール完了後にWindowsのアイコンキャッシュを強制更新 }
+    { Windows 10/11 対応: アイコンキャッシュをクリアして再構築 }
+    Exec(ExpandConstant('{sys}\ie4uinit.exe'), '-ClearIconCache', '', SW_HIDE,
+         ewWaitUntilTerminated, ResultCode);
     Exec(ExpandConstant('{sys}\ie4uinit.exe'), '-show', '', SW_HIDE,
          ewWaitUntilTerminated, ResultCode);
+    { Shell にアイコン変更を通知（エクスプローラーが即時反映） }
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nil, nil);
   end;
 end;
