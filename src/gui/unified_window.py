@@ -687,7 +687,7 @@ class UnifiedWindow:
         )
         settings_frame.pack(fill="x", padx=15, pady=(0, 5))
 
-        # 行1: 挿入文字 + 開始番号
+        # 行1: 文字選択
         row1 = ctk.CTkFrame(settings_frame, fg_color="transparent")
         row1.pack(fill="x", padx=8, pady=(8, 4))
 
@@ -715,25 +715,9 @@ class UnifiedWindow:
         # 初期状態は非表示（「資料」がデフォルト）
         self.custom_prefix_var.trace("w", self._on_numbering_settings_changed)
 
-        self.number_label = ctk.CTkLabel(
-            row1, text="開始番号:",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-            text_color=CLR_DARK_TEXT
-        )
-        self.number_label.pack(side="left", padx=(0, 6))
-
-        self.number_var = ctk.StringVar(value="1")
-        self.number_entry = ctk.CTkEntry(
-            row1, textvariable=self.number_var,
-            placeholder_text="1", width=70,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        )
-        self.number_entry.pack(side="left")
-        self.number_var.trace("w", self._on_numbering_settings_changed)
-
-        # 行2: 番号方式 + プレビュー
+        # 行2: 番号設定（番号方式 + 開始番号 + プレビュー）
         row2 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row2.pack(fill="x", padx=8, pady=(0, 6))
+        row2.pack(fill="x", padx=8, pady=(0, 4))
 
         ctk.CTkLabel(
             row2, text="番号方式:",
@@ -752,6 +736,22 @@ class UnifiedWindow:
         )
         self.numbering_type_menu.pack(side="left", padx=(0, 16))
 
+        self.number_label = ctk.CTkLabel(
+            row2, text="開始番号:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            text_color=CLR_DARK_TEXT
+        )
+        self.number_label.pack(side="left", padx=(0, 6))
+
+        self.number_var = ctk.StringVar(value="1")
+        self.number_entry = ctk.CTkEntry(
+            row2, textvariable=self.number_var,
+            placeholder_text="1", width=70,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        )
+        self.number_entry.pack(side="left", padx=(0, 16))
+        self.number_var.trace("w", self._on_numbering_settings_changed)
+
         self.preview_label = ctk.CTkLabel(
             row2, text="→ 「資料1, 資料2, 資料3...」",
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
@@ -759,44 +759,44 @@ class UnifiedWindow:
         )
         self.preview_label.pack(side="left")
 
-        # 行3: ファイル名変更オプション
+        # 行3: フォント選択
         row3 = ctk.CTkFrame(settings_frame, fg_color="transparent")
         row3.pack(fill="x", padx=8, pady=(0, 4))
 
-        self.rename_file_var = ctk.BooleanVar(value=False)
-        ctk.CTkSwitch(
-            row3, text="ファイル名の先頭に資料番号を追加する（例: 【資料１】ファイル名.pdf）",
-            variable=self.rename_file_var,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
-            progress_color=CLR_DOC_PRIMARY
-        ).pack(side="left")
-
-        # 行3b: フォント選択
-        row3b = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row3b.pack(fill="x", padx=8, pady=(0, 4))
-
         ctk.CTkLabel(
-            row3b, text="フォント:",
+            row3, text="フォント:",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
             text_color=CLR_DARK_TEXT
         ).pack(side="left", padx=(0, 6))
 
         self.doc_font_var = ctk.StringVar(value=DEFAULT_FONT_DISPLAY_NAME)
         ctk.CTkOptionMenu(
-            row3b,
+            row3,
             variable=self.doc_font_var,
             values=FONT_DISPLAY_NAMES,
             width=140,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
         ).pack(side="left")
 
-        # 行4: A3縦ページ左綴じ対応オプション
+        # 行4: ファイル名変更オプション
         row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row4.pack(fill="x", padx=8, pady=(0, 8))
+        row4.pack(fill="x", padx=8, pady=(0, 4))
+
+        self.rename_file_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            row4, text="ファイル名の先頭に資料番号を追加する（例: 【資料１】ファイル名.pdf）",
+            variable=self.rename_file_var,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_DOC_PRIMARY
+        ).pack(side="left")
+
+        # 行5: A3縦ページ左綴じ対応オプション
+        row5 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row5.pack(fill="x", padx=8, pady=(0, 8))
 
         self.a3_compat_var = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(
-            row4, text="A3縦・A4横ページを左綴じ対応位置（右下）に挿入",
+            row5, text="A3縦・A4横ページを左綴じ対応位置（右下）に挿入",
             variable=self.a3_compat_var,
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
             progress_color=CLR_DOC_PRIMARY
