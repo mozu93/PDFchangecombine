@@ -219,6 +219,20 @@ class InputValidator:
         return True
 
     @staticmethod
+    def validate_prefix_text(prefix: str) -> bool:
+        """プレフィックス文字列の検証（任意入力用）"""
+        if not prefix or not isinstance(prefix, str):
+            return False
+        if len(prefix.strip()) > 10:
+            logger.warning(f"プレフィックスが長すぎます: {len(prefix)} 文字")
+            return False
+        dangerous_chars = ['<', '>', '"', "'", '&', ';', '(', ')', '{', '}']
+        if any(char in prefix for char in dangerous_chars):
+            logger.warning(f"プレフィックスに危険な文字が含まれています: {prefix}")
+            return False
+        return True
+
+    @staticmethod
     def validate_page_range(start_page: str, start_number: str) -> bool:
         """
         ページ番号範囲の検証

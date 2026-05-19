@@ -1289,6 +1289,17 @@ class UnifiedWindow:
             if not prefix:
                 self.document_status.configure(text="挿入する文字を入力してください")
                 return
+
+            # 「その他」選択時はプレフィックス文字列を検証
+            if self.prefix_var.get() == "その他":
+                if not InputValidator.validate_prefix_text(prefix):
+                    error_handler.handle_error(
+                        ValueError("無効なプレフィックス"),
+                        ErrorSeverity.WARNING,
+                        "入力検証",
+                        "入力した文字に使用できない文字が含まれています。記号（< > \" ' & ; ( ) { }）は使用不可です。10文字以内で入力してください。"
+                    )
+                    return
             numbering_type = self.numbering_type_var.get()
 
             # 確認メッセージを生成

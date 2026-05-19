@@ -159,6 +159,28 @@ class TestOutputManager:
             assert expected_dir.exists()  # ディレクトリが作成されることを確認
 
 
+from src.utils.security import InputValidator
+
+class TestValidatePrefixText:
+    def test_valid_kanji(self):
+        assert InputValidator.validate_prefix_text("別紙") is True
+
+    def test_valid_alphanumeric(self):
+        assert InputValidator.validate_prefix_text("Doc") is True
+
+    def test_empty_string(self):
+        assert InputValidator.validate_prefix_text("") is False
+
+    def test_too_long(self):
+        assert InputValidator.validate_prefix_text("あ" * 11) is False
+
+    def test_dangerous_char_lt(self):
+        assert InputValidator.validate_prefix_text("<script>") is False
+
+    def test_dangerous_char_semicolon(self):
+        assert InputValidator.validate_prefix_text("資料;") is False
+
+
 if __name__ == "__main__":
     # テスト実行
     pytest.main([__file__, "-v"])
