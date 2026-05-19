@@ -6,6 +6,7 @@ import customtkinter as ctk
 from pathlib import Path
 from typing import List, Callable, Optional, Dict
 import tkinter as tk
+import re
 
 from .theme import (
     CLR_LIGHT_BG, CLR_SEL_BORDER, CLR_RED_LIGHT, CLR_RED_TEXT,
@@ -459,8 +460,6 @@ class DraggableFileList(ctk.CTkScrollableFrame):
 
     def sort_by_filename(self):
         """ファイル名の自然順（数値を考慮）で並び替え"""
-        import re
-
         def _natural_key(path: str):
             name = Path(path).name.lower()
             return [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', name)]
