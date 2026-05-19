@@ -678,12 +678,21 @@ class UnifiedWindow:
 
         self.prefix_var = ctk.StringVar(value="資料")
         self.prefix_btn = ctk.CTkSegmentedButton(
-            row1, values=["資料", "参考"],
+            row1, values=["資料", "参考", "その他"],
             variable=self.prefix_var,
             command=self._on_prefix_changed,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         )
-        self.prefix_btn.pack(side="left", padx=(0, 20))
+        self.prefix_btn.pack(side="left", padx=(0, 8))
+
+        self.custom_prefix_var = ctk.StringVar(value="")
+        self.custom_prefix_entry = ctk.CTkEntry(
+            row1, textvariable=self.custom_prefix_var,
+            placeholder_text="例：別紙", width=100,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        )
+        # 初期状態は非表示（「資料」がデフォルト）
+        self.custom_prefix_var.trace("w", self._on_numbering_settings_changed)
 
         self.number_label = ctk.CTkLabel(
             row1, text="開始番号:",
@@ -1138,14 +1147,26 @@ class UnifiedWindow:
             logger.error(f"ファイル削除中にエラーが発生: {str(e)}")
             self.document_status.configure(text="削除中にエラーが発生しました")
 
+    def _get_active_prefix(self) -> str:
+        """現在有効なプレフィックス文字列を返す"""
+        if self.prefix_var.get() == "その他":
+            return self.custom_prefix_var.get().strip()
+        return self.prefix_var.get()
+
     def _on_prefix_changed(self, value: str) -> None:
-        """挿入文字（資料/参考）変更時の処理"""
-        if value == "参考":
-            self.numbering_type_var.set("番号なし")
-            self.number_var.set("0")
-        else:
+        """挿入文字変更時の処理"""
+        if value == "その他":
+            self.custom_prefix_entry.pack(side="left", padx=(0, 20))
             self.numbering_type_var.set("連番")
             self.number_var.set("1")
+        else:
+            self.custom_prefix_entry.pack_forget()
+            if value == "参考":
+                self.numbering_type_var.set("番号なし")
+                self.number_var.set("0")
+            else:
+                self.numbering_type_var.set("連番")
+                self.number_var.set("1")
         self._on_numbering_type_changed(self.numbering_type_var.get())
 
     def _on_numbering_type_changed(self, value: str) -> None:
@@ -1170,7 +1191,7 @@ class UnifiedWindow:
 
     def _update_numbering_preview(self) -> None:
         """プレビュー更新"""
-        prefix = self.prefix_var.get()
+        prefix = self._get_active_prefix()
         numbering_type = self.numbering_type_var.get()
         number_value = self.number_var.get().strip()
 
@@ -1199,10 +1220,14 @@ class UnifiedWindow:
     def _update_execute_button_state(self) -> None:
         """実行ボタンの状態更新"""
         numbering_type = self.numbering_type_var.get()
+        prefix_ok = True
+        if self.prefix_var.get() == "その他":
+            prefix_ok = bool(self.custom_prefix_var.get().strip())
+
         if numbering_type == "番号なし":
-            ready = bool(self.document_number_files)
+            ready = bool(self.document_number_files) and prefix_ok
         else:
-            ready = bool(self.document_number_files and self.number_var.get().strip())
+            ready = bool(self.document_number_files and self.number_var.get().strip()) and prefix_ok
         state = "normal" if ready else "disabled"
         self.document_execute_btn.configure(state=state)
         self.document_preview_btn.configure(state="normal" if self.document_number_files else "disabled")
@@ -1254,7 +1279,10 @@ class UnifiedWindow:
                 )
                 return
 
-            prefix = self.prefix_var.get()
+            prefix = self._get_active_prefix()
+            if not prefix:
+                self.document_status.configure(text="挿入する文字を入力してください")
+                return
             numbering_type = self.numbering_type_var.get()
 
             # 確認メッセージを生成
