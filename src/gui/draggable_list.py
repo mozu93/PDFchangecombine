@@ -456,3 +456,14 @@ class DraggableFileList(ctk.CTkScrollableFrame):
             self._update_display()
 
         return moved
+
+    def sort_by_filename(self):
+        """ファイル名の自然順（数値を考慮）で並び替え"""
+        import re
+
+        def _natural_key(path: str):
+            name = Path(path).name.lower()
+            return [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', name)]
+
+        self.file_paths.sort(key=_natural_key)
+        self._update_display()
