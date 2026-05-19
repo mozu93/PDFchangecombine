@@ -986,11 +986,9 @@ class PDFCombiner:
             japanese_fonts = []
             if _sel:
                 japanese_fonts.append((_sel["file"], _sel["reportlab"], _sel["ttc"]))
-            for _fb_name in ["メイリオ", "MSゴシック", "MS明朝"]:
-                if _fb_name != _selected_name:
-                    _fb = FONT_OPTIONS.get(_fb_name, {})
-                    if _fb:
-                        japanese_fonts.append((_fb["file"], _fb["reportlab"], _fb["ttc"]))
+            for _fb_name in [k for k in FONT_OPTIONS if k != _selected_name]:
+                _fb = FONT_OPTIONS[_fb_name]
+                japanese_fonts.append((_fb["file"], _fb["reportlab"], _fb["ttc"]))
 
             for font_path, font_name, is_ttc in japanese_fonts:
                 if Path(font_path).exists() and not font_registered:
