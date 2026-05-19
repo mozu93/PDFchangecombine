@@ -27,7 +27,8 @@ from ..config import (
     WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT,
     UI_THEME, UI_COLOR_THEME,
     MAX_STARTUP_TIME_SECONDS,
-    ALL_SUPPORTED_EXTENSIONS
+    ALL_SUPPORTED_EXTENSIONS,
+    FONT_DISPLAY_NAMES, DEFAULT_FONT_DISPLAY_NAME,
 )
 from ..utils.logger import logger
 from ..utils.drag_drop import drag_drop_handler
@@ -770,6 +771,25 @@ class UnifiedWindow:
             progress_color=CLR_DOC_PRIMARY
         ).pack(side="left")
 
+        # 行3b: フォント選択
+        row3b = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row3b.pack(fill="x", padx=8, pady=(0, 4))
+
+        ctk.CTkLabel(
+            row3b, text="フォント:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            text_color=CLR_DARK_TEXT
+        ).pack(side="left", padx=(0, 6))
+
+        self.doc_font_var = ctk.StringVar(value=DEFAULT_FONT_DISPLAY_NAME)
+        ctk.CTkOptionMenu(
+            row3b,
+            variable=self.doc_font_var,
+            values=FONT_DISPLAY_NAMES,
+            width=140,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        ).pack(side="left")
+
         # 行4: A3縦ページ左綴じ対応オプション
         row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
         row4.pack(fill="x", padx=8, pady=(0, 8))
@@ -1363,7 +1383,8 @@ class UnifiedWindow:
             # 別スレッドで処理実行
             rename_file = self.rename_file_var.get()
             a3_compat = self.a3_compat_var.get()
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat))
+            doc_font = self.doc_font_var.get()
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, doc_font))
             thread.daemon = True
             thread.start()
 
@@ -1375,7 +1396,7 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False) -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, font_display_name: str = "") -> None:
         """挿入実行（別スレッド）"""
         try:
             def progress_callback(message, progress):
@@ -1391,6 +1412,7 @@ class UnifiedWindow:
                     document_prefix=prefix,
                     rename_file=rename_file,
                     a3_portrait_compat=a3_portrait_compat,
+                    font_display_name=font_display_name,
                     progress_callback=progress_callback
                 )
             else:
@@ -1416,6 +1438,7 @@ class UnifiedWindow:
                     document_prefix=prefix,
                     rename_file=rename_file,
                     a3_portrait_compat=a3_portrait_compat,
+                    font_display_name=font_display_name,
                     progress_callback=progress_callback
                 )
 
@@ -2064,6 +2087,23 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left")
 
+        # フォント選択
+        font_row = ctk.CTkFrame(opt_frame, fg_color="transparent")
+        font_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        ctk.CTkLabel(font_row, text="フォント:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(side="left", padx=(0, 4))
+
+        self.pn_font_var = ctk.StringVar(value=DEFAULT_FONT_DISPLAY_NAME)
+        ctk.CTkOptionMenu(
+            font_row,
+            variable=self.pn_font_var,
+            values=FONT_DISPLAY_NAMES,
+            width=140,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        ).pack(side="left")
+
         # 左綴じ対応スイッチ
         binding_row2 = ctk.CTkFrame(opt_frame, fg_color="transparent")
         binding_row2.pack(fill="x", padx=12, pady=(0, 8))
@@ -2184,13 +2224,14 @@ class UnifiedWindow:
         self.pn_progress.set(0)
 
         binding_compat = self.pn_binding_compat_var.get()
+        pn_font = self.pn_font_var.get()
         threading.Thread(
             target=self._run_pagenumber_insertion,
-            args=(pdf_path, start_page, start_number, binding_compat),
+            args=(pdf_path, start_page, start_number, binding_compat, pn_font),
             daemon=True
         ).start()
 
-    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False) -> None:
+    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False, font_display_name: str = "") -> None:
         tmp_path = None
         try:
             def on_progress(message, progress):
@@ -2211,7 +2252,8 @@ class UnifiedWindow:
                 start_page=start_page,
                 start_number=start_number,
                 progress_callback=on_progress,
-                page_number_binding_compat=binding_compat
+                page_number_binding_compat=binding_compat,
+                font_display_name=font_display_name
             )
 
             if result.success:
@@ -2292,7 +2334,8 @@ class UnifiedWindow:
             start = number_value if number_value else "1"
             doc_text = f"{prefix}{start}"
 
-        render_fn = lambda: render_doc_number_preview(pdf_path, doc_text, a3_compat)
+        font_display_name = self.doc_font_var.get()
+        render_fn = lambda: render_doc_number_preview(pdf_path, doc_text, a3_compat, font_display_name)
         PDFPreviewDialog(self.root, f"プレビュー（資料番号: {doc_text}）", render_fn)
 
     def _show_page_number_preview(self) -> None:
@@ -2307,7 +2350,8 @@ class UnifiedWindow:
         binding_compat = self.pn_binding_compat_var.get()
         page_number_text = str(start_number)
 
-        render_fn = lambda: render_page_number_preview(pdf_path, page_number_text, binding_compat)
+        font_display_name = self.pn_font_var.get()
+        render_fn = lambda: render_page_number_preview(pdf_path, page_number_text, binding_compat, font_display_name)
         PDFPreviewDialog(self.root, f"プレビュー（ページ番号: {page_number_text}）", render_fn)
 
     def _open_help(self) -> None:
