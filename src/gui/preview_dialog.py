@@ -23,7 +23,15 @@ _ZOOM_STEPS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
 _FIT_IDX = 3   # _ZOOM_STEPS[3] == 1.0 がフィット
 
 
-def _load_jp_font(size_px: int) -> ImageFont.FreeTypeFont:
+def _load_jp_font(size_px: int, display_name: str = "") -> ImageFont.FreeTypeFont:
+    from ..config import FONT_OPTIONS
+    if display_name and display_name in FONT_OPTIONS:
+        fp = FONT_OPTIONS[display_name]["file"]
+        if Path(fp).exists():
+            try:
+                return ImageFont.truetype(fp, size=size_px)
+            except Exception:
+                pass
     for fp in [
         "C:/Windows/Fonts/msmincho.ttc",
         "C:/Windows/Fonts/msgothic.ttc",
@@ -76,6 +84,7 @@ def render_doc_number_preview(
     pdf_path: str,
     document_text: str,
     a3_portrait_compat: bool,
+    font_display_name: str = "",
 ) -> Optional[Image.Image]:
     """資料番号挿入位置のプレビュー画像を生成する（フルサイズで返す）"""
     try:
@@ -115,7 +124,7 @@ def render_doc_number_preview(
             x = pw - margin - font_size
             y = ph - margin - tw
 
-        font = _load_jp_font(int(font_size * _RENDER_SCALE))
+        font = _load_jp_font(int(font_size * _RENDER_SCALE), display_name=font_display_name)
         hi  = (220, 50, 50, 160)
         col = (180, 0, 0, 255)
 
@@ -136,6 +145,7 @@ def render_page_number_preview(
     pdf_path: str,
     page_number_text: str,
     binding_compat: bool,
+    font_display_name: str = "",
 ) -> Optional[Image.Image]:
     """ページ番号挿入位置のプレビュー画像を生成する（フルサイズで返す）"""
     try:
@@ -173,7 +183,7 @@ def render_page_number_preview(
             x = (pw - tw) / 2
             y = ph - margin - font_size
 
-        font = _load_jp_font(int(font_size * _RENDER_SCALE))
+        font = _load_jp_font(int(font_size * _RENDER_SCALE), display_name=font_display_name)
         hi  = (50, 80, 220, 160)
         col = (0, 0, 180, 255)
 
