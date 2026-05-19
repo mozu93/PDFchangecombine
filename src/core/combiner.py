@@ -80,7 +80,8 @@ class PDFCombiner:
                     start_page: int = 1,
                     start_number: int = 1,
                     progress_callback: Optional[callable] = None,
-                    page_number_binding_compat: bool = False) -> CombineResult:
+                    page_number_binding_compat: bool = False,
+                    font_display_name: str = "") -> CombineResult:
         """
         複数PDFファイルの結合（要件定義書 F-204）
         """
@@ -159,7 +160,11 @@ class PDFCombiner:
                     writer = fitz.open()
                     writer.insert_pdf(clean_doc)
 
-                font_name = "cour"
+                from ..config import FONT_OPTIONS, DEFAULT_FONT_DISPLAY_NAME
+                _pn_display = font_display_name or DEFAULT_FONT_DISPLAY_NAME
+                _pn_info = FONT_OPTIONS.get(_pn_display, {})
+                _pn_font_file = _pn_info.get("file", "") if _pn_info else ""
+                font_name = "cour"  # 幅計算用（数字のみのため近似値で十分）
 
                 for page_num in range(start_page - 1, len(writer)):
                     page = writer[page_num]
@@ -227,12 +232,21 @@ class PDFCombiner:
                     logger.info(f"ページ番号座標（元回転{original_rotation}度、0度状態での配置）: x={x:.1f}, y={y:.1f}, rotate={rotate_param}")
 
                     # ページ番号を挿入（全回転角度に対応）
-                    page.insert_text((x, y),
-                                     page_number_text,
-                                     fontname=font_name,
-                                     fontsize=12,
-                                     color=(0, 0, 0),
-                                     rotate=rotate_param)
+                    if _pn_font_file and Path(_pn_font_file).exists():
+                        page.insert_text((x, y),
+                                         page_number_text,
+                                         fontname="custpn",
+                                         fontfile=_pn_font_file,
+                                         fontsize=12,
+                                         color=(0, 0, 0),
+                                         rotate=rotate_param)
+                    else:
+                        page.insert_text((x, y),
+                                         page_number_text,
+                                         fontname=font_name,
+                                         fontsize=12,
+                                         color=(0, 0, 0),
+                                         rotate=rotate_param)
 
                     # 回転を元に戻す
                     if original_rotation != 0:

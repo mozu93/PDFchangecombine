@@ -262,6 +262,16 @@ class TestFontDisplayNameParam:
         assert not result.success
         assert result.error_message == "対象ファイルが指定されていません"
 
+    def test_combine_pdfs_accepts_font_display_name(self):
+        """combine_pdfs が font_display_name を受け付ける"""
+        result = self.combiner.combine_pdfs(
+            pdf_paths=[],
+            output_path="/tmp/test_out.pdf",
+            font_display_name="メイリオ"
+        )
+        assert not result.success
+        assert result.error_message == "結合対象ファイルが指定されていません"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
