@@ -1167,7 +1167,15 @@ class UnifiedWindow:
             else:
                 self.numbering_type_var.set("連番")
                 self.number_var.set("1")
-        self._on_numbering_type_changed(self.numbering_type_var.get())
+        numbering_type = self.numbering_type_var.get()
+        if numbering_type == "番号なし":
+            self.number_label.configure(state="disabled")
+            self.number_entry.configure(state="disabled")
+        else:
+            self.number_label.configure(state="normal")
+            self.number_entry.configure(state="normal")
+        self._update_numbering_preview()
+        self._update_execute_button_state()
 
     def _on_numbering_type_changed(self, value: str) -> None:
         """番号方式変更時の処理"""
@@ -1220,9 +1228,7 @@ class UnifiedWindow:
     def _update_execute_button_state(self) -> None:
         """実行ボタンの状態更新"""
         numbering_type = self.numbering_type_var.get()
-        prefix_ok = True
-        if self.prefix_var.get() == "その他":
-            prefix_ok = bool(self.custom_prefix_var.get().strip())
+        prefix_ok = bool(self._get_active_prefix())
 
         if numbering_type == "番号なし":
             ready = bool(self.document_number_files) and prefix_ok
