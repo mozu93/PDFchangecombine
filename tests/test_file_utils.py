@@ -184,6 +184,29 @@ class TestValidatePrefixText:
         assert InputValidator.validate_prefix_text("資料;") is False
 
 
+class TestFontOptions:
+    """FONT_OPTIONS 定義テスト"""
+
+    def test_font_options_has_four_fonts(self):
+        from src.config import FONT_OPTIONS
+        assert set(FONT_OPTIONS.keys()) == {"MSゴシック", "MS明朝", "メイリオ", "丸ゴシック"}
+
+    def test_each_font_entry_has_required_fields(self):
+        from src.config import FONT_OPTIONS
+        for name, info in FONT_OPTIONS.items():
+            assert "file" in info, f"{name} に 'file' がありません"
+            assert "reportlab" in info, f"{name} に 'reportlab' がありません"
+            assert "ttc" in info, f"{name} に 'ttc' がありません"
+
+    def test_default_font_is_in_options(self):
+        from src.config import FONT_OPTIONS, DEFAULT_FONT_DISPLAY_NAME
+        assert DEFAULT_FONT_DISPLAY_NAME in FONT_OPTIONS
+
+    def test_font_display_names_list(self):
+        from src.config import FONT_OPTIONS, FONT_DISPLAY_NAMES
+        assert FONT_DISPLAY_NAMES == ["MSゴシック", "MS明朝", "メイリオ", "丸ゴシック"]
+
+
 if __name__ == "__main__":
     # テスト実行
     pytest.main([__file__, "-v"])

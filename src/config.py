@@ -102,3 +102,29 @@ if not PRODUCTION_MODE:
     LOG_RETENTION_DAYS = 7
     MAX_FILE_SIZE_MB = 50
     DEBUG_MODE = True
+
+# フォント選択設定
+FONT_OPTIONS = {
+    "MSゴシック": {
+        "file": "C:/Windows/Fonts/msgothic.ttc",
+        "reportlab": "MS-Gothic",
+        "ttc": True,
+    },
+    "MS明朝": {
+        "file": "C:/Windows/Fonts/msmincho.ttc",
+        "reportlab": "MS-Mincho",
+        "ttc": True,
+    },
+    "メイリオ": {
+        "file": "C:/Windows/Fonts/meiryo.ttc",
+        "reportlab": "Meiryo",
+        "ttc": True,
+    },
+    "丸ゴシック": {
+        "file": "C:/Windows/Fonts/HGRMB.TTF",
+        "reportlab": "HG-Maru-Gothic",
+        "ttc": False,
+    },
+}
+FONT_DISPLAY_NAMES = list(FONT_OPTIONS.keys())
+DEFAULT_FONT_DISPLAY_NAME = "MSゴシック"
