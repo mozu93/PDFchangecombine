@@ -13,6 +13,7 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from .theme import FONT_FAMILY, CLR_PRIMARY, CLR_ACCENT
+from ..config import FONT_OPTIONS
 
 _RENDER_SCALE = 1.5
 _CANVAS_W = 740
@@ -24,7 +25,6 @@ _FIT_IDX = 3   # _ZOOM_STEPS[3] == 1.0 がフィット
 
 
 def _load_jp_font(size_px: int, display_name: str = "") -> ImageFont.FreeTypeFont:
-    from ..config import FONT_OPTIONS
     if display_name and display_name in FONT_OPTIONS:
         fp = FONT_OPTIONS[display_name]["file"]
         if Path(fp).exists():
