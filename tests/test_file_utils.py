@@ -171,8 +171,11 @@ class TestValidatePrefixText:
     def test_empty_string(self):
         assert InputValidator.validate_prefix_text("") is False
 
-    def test_too_long(self):
-        assert InputValidator.validate_prefix_text("あ" * 11) is False
+    def test_boundary_10_chars(self):
+        assert InputValidator.validate_prefix_text("a" * 10) is True
+
+    def test_boundary_11_chars(self):
+        assert InputValidator.validate_prefix_text("a" * 11) is False
 
     def test_dangerous_char_lt(self):
         assert InputValidator.validate_prefix_text("<script>") is False
