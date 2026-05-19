@@ -433,6 +433,16 @@ class UnifiedWindow:
         )
         self.combination_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
 
+        self.combination_sort_btn = ctk.CTkButton(
+            toolbar, text="Ａ↓",
+            command=self._sort_combination_files,
+            height=32, width=46,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
+        )
+        self.combination_sort_btn.pack(side="left", padx=(0, 4), pady=6)
+
         self.combination_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
             font=ctk.CTkFont(family=FONT_FAMILY, size=13), text_color=CLR_GRAY_TEXT
@@ -633,6 +643,16 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
         self.document_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.document_sort_btn = ctk.CTkButton(
+            toolbar, text="Ａ↓",
+            command=self._sort_document_files,
+            height=32, width=46,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
+        )
+        self.document_sort_btn.pack(side="left", padx=(0, 4), pady=6)
 
         self.document_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
@@ -1126,6 +1146,11 @@ class UnifiedWindow:
             logger.error(f"ファイル移動中にエラーが発生: {str(e)}")
             self.document_status.configure(text="移動中にエラーが発生しました")
 
+    def _sort_document_files(self) -> None:
+        """資料NO挿入リストをファイル名順に並び替え"""
+        self.document_draggable_list.sort_by_filename()
+        self._update_document_number_display()
+
     def _delete_selected_document(self) -> None:
         """選択した資料NO挿入ファイルを削除"""
         try:
@@ -1549,6 +1574,11 @@ class UnifiedWindow:
         except Exception as e:
             logger.error(f"ファイル下移動中にエラーが発生: {str(e)}")
             self.combination_status.configure(text="移動中にエラーが発生しました")
+
+    def _sort_combination_files(self) -> None:
+        """PDF結合リストをファイル名順に並び替え"""
+        self.combination_draggable_list.sort_by_filename()
+        self._update_combination_display()
 
     def _delete_selected_combination(self) -> None:
         """選択したPDFファイルを削除"""
