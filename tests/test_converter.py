@@ -238,6 +238,52 @@ class TestImageConverter:
             assert info == {}
 
 
+class TestExcelSheetNumbering:
+    """Excelシート分割時の連番ファイル名テスト"""
+
+    def test_sheet_filenames_are_numbered_sequentially(self):
+        """シートファイル名に左から順の2桁連番が付く"""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        converter = OfficeConverter()
+
+        mock_sheet1 = MagicMock()
+        mock_sheet1.Name = "Sheet1"
+        mock_sheet2 = MagicMock()
+        mock_sheet2.Name = "データ"
+        mock_sheet3 = MagicMock()
+        mock_sheet3.Name = "まとめ"
+
+        mock_workbook = MagicMock()
+        mock_workbook.Worksheets = [mock_sheet1, mock_sheet2, mock_sheet3]
+
+        mock_excel_app = MagicMock()
+        mock_excel_app.Workbooks.Open.return_value = mock_workbook
+        mock_workbook.ActiveSheet = mock_sheet1
+
+        generated = []
+
+        mock_sheet1.ExportAsFixedFormat.side_effect = lambda **kw: generated.append(kw["Filename"])
+        mock_sheet2.ExportAsFixedFormat.side_effect = lambda **kw: generated.append(kw["Filename"])
+        mock_sheet3.ExportAsFixedFormat.side_effect = lambda **kw: generated.append(kw["Filename"])
+
+        with patch("win32com.client.DispatchEx", return_value=mock_excel_app), \
+             patch("win32com.client.Dispatch", return_value=mock_excel_app):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                input_path = str(Path(tmpdir) / "report.xlsx")
+                Path(input_path).touch()
+                output_path = str(Path(tmpdir) / "report.pdf")
+                converter._try_office_conversion(input_path, output_path, split_sheets=True)
+
+        assert len(generated) == 3
+        names = [Path(p).name for p in generated]
+        assert names[0] == "report_01_Sheet1.pdf"
+        assert names[1] == "report_02_データ.pdf"
+        assert names[2] == "report_03_まとめ.pdf"
+
+
 if __name__ == "__main__":
     # テスト実行
     pytest.main([__file__, "-v"])

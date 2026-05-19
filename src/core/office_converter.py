@@ -238,12 +238,13 @@ class OfficeConverter:
                     if split_sheets:
                         logger.info("Excelの全シートを個別のPDFとして出力します。")
 
-                        # 全てのシートをループ
-                        for sheet in workbook.Worksheets:
+                        # 全てのシートをループ（左から順に2桁連番付与）
+                        for idx, sheet in enumerate(workbook.Worksheets, start=1):
                             sheet.Activate()
 
-                            # 出力ファイル名を生成 (元ファイル名_シート名.pdf)
-                            output_sheet_path = f"{output_abs_path.rsplit('.', 1)[0]}_{sheet.Name}.pdf"
+                            # 出力ファイル名を生成 (元ファイル名_連番_シート名.pdf)
+                            base = output_abs_path.rsplit('.', 1)[0]
+                            output_sheet_path = f"{base}_{idx:02d}_{sheet.Name}.pdf"
 
                             logger.info(f"シートをPDF化: {sheet.Name} -> {Path(output_sheet_path).name}")
 
