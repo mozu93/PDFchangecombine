@@ -425,6 +425,7 @@ class PDFCombiner:
                            document_number: str, document_prefix: str = "資料",
                            rename_file: bool = False,
                            a3_portrait_compat: bool = False,
+                           font_display_name: str = "",
                            progress_callback: Optional[callable] = None) -> CombineResult:
         """
         PDFファイルに資料NO挿入（各ファイル個別処理・元ファイル同名保存）
@@ -466,7 +467,7 @@ class PDFCombiner:
                         progress_callback(f"処理中: {Path(pdf_path).name}", progress)
 
                     # 元ファイルのバックアップと資料NO挿入
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, font_display_name)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -514,6 +515,7 @@ class PDFCombiner:
                                       prefix_number: str = "1", document_prefix: str = "資料",
                                       rename_file: bool = False,
                                       a3_portrait_compat: bool = False,
+                                      font_display_name: str = "",
                                       progress_callback: Optional[callable] = None) -> CombineResult:
         """
         複数PDFファイルに連番で資料NO挿入
@@ -595,7 +597,7 @@ class PDFCombiner:
                     logger.info(f"ファイル処理開始: {Path(pdf_path).name} → {document_number}")
 
                     # 資料NO挿入実行
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, font_display_name)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -694,7 +696,7 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False) -> bool:
+    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, font_display_name: str = "") -> bool:
         """
         単一PDFファイルに資料NO挿入（元ファイルバックアップ付き）
 
@@ -820,7 +822,8 @@ class PDFCombiner:
                             logger.info(f"270度回転ページ用オーバーレイ座標（右上角縦向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
 
                         overlay_data = self._create_japanese_overlay_with_proper_embedding(
-                            page_width, page_height, document_text, overlay_x, overlay_y, font_size, original_rotation
+                            page_width, page_height, document_text, overlay_x, overlay_y, font_size, original_rotation,
+                            font_display_name=font_display_name
                         )
 
                         if overlay_data:
@@ -849,7 +852,7 @@ class PDFCombiner:
                         lb_text_rotate = -90 if needs_bottom_right else 0
                         overlay_data = self._create_japanese_overlay_with_proper_embedding(
                             page_width, page_height, document_text, x, y, font_size, rotate_param,
-                            text_rotate=lb_text_rotate
+                            text_rotate=lb_text_rotate, font_display_name=font_display_name
                         )
 
                         if overlay_data:
@@ -945,7 +948,8 @@ class PDFCombiner:
     def _create_japanese_overlay_with_proper_embedding(self, page_width: float, page_height: float,
                                                      document_text: str, x: float, y: float,
                                                      font_size: float, rotate_param: int,
-                                                     text_rotate: int = 0) -> bytes:
+                                                     text_rotate: int = 0,
+                                                     font_display_name: str = "") -> bytes:
         """
         確実な日本語フォント埋め込みでReportLabオーバーレイを作成
 
@@ -974,28 +978,38 @@ class PDFCombiner:
             # ReportLabキャンバス
             c = canvas.Canvas(packet, pagesize=(page_width, page_height))
 
-            # 日本語フォントを確実に登録（Regular版を優先）
+            # 日本語フォントを確実に登録（選択フォント優先、フォールバックあり）
+            from ..config import FONT_OPTIONS, DEFAULT_FONT_DISPLAY_NAME
             font_registered = False
-            japanese_fonts = [
-                ("C:/Windows/Fonts/meiryo.ttc", "Meiryo"),
-                ("C:/Windows/Fonts/msgothic.ttc", "MS-Gothic"),
-                ("C:/Windows/Fonts/msmincho.ttc", "MS-Mincho"),
-            ]
+            _selected_name = font_display_name or DEFAULT_FONT_DISPLAY_NAME
+            _sel = FONT_OPTIONS.get(_selected_name, {})
+            japanese_fonts = []
+            if _sel:
+                japanese_fonts.append((_sel["file"], _sel["reportlab"], _sel["ttc"]))
+            for _fb_name in ["メイリオ", "MSゴシック", "MS明朝"]:
+                if _fb_name != _selected_name:
+                    _fb = FONT_OPTIONS.get(_fb_name, {})
+                    if _fb:
+                        japanese_fonts.append((_fb["file"], _fb["reportlab"], _fb["ttc"]))
 
-            for font_path, font_name in japanese_fonts:
+            for font_path, font_name, is_ttc in japanese_fonts:
                 if Path(font_path).exists() and not font_registered:
                     try:
-                        # TTCファイルの場合、subfontIndex=0を試す（Regular版を優先）
-                        pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                        if is_ttc:
+                            pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                        else:
+                            pdfmetrics.registerFont(TTFont(font_name, font_path))
                         c.setFont(font_name, font_size)
                         font_registered = True
-                        logger.info(f"ReportLab日本語フォント登録成功（Regular）: {font_name}")
+                        logger.info(f"ReportLab日本語フォント登録成功: {font_name}")
                         break
                     except Exception as font_error:
                         try:
-                            # subfontIndex=1（Bold版）をフォールバック
                             bold_name = f"{font_name}-Bold"
-                            pdfmetrics.registerFont(TTFont(bold_name, font_path, subfontIndex=1))
+                            if is_ttc:
+                                pdfmetrics.registerFont(TTFont(bold_name, font_path, subfontIndex=1))
+                            else:
+                                pdfmetrics.registerFont(TTFont(bold_name, font_path))
                             c.setFont(bold_name, font_size)
                             font_registered = True
                             logger.info(f"ReportLab日本語フォント登録成功（Bold）: {bold_name}")

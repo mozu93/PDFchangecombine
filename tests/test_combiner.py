@@ -224,5 +224,44 @@ class TestPDFCombiner:
             assert len(result.processed_files) == 1
 
 
+class TestFontDisplayNameParam:
+    """font_display_name パラメータ追加テスト"""
+
+    def setup_method(self):
+        self.combiner = PDFCombiner()
+
+    def test_add_document_numbers_accepts_font_display_name(self):
+        """add_document_numbers が font_display_name を受け付ける"""
+        result = self.combiner.add_document_numbers(
+            pdf_paths=[],
+            output_path="",
+            document_number="1",
+            font_display_name="MSゴシック"
+        )
+        # TypeError なく通常のバリデーションエラーになること
+        assert not result.success
+        assert result.error_message == "対象ファイルが指定されていません"
+
+    def test_add_sequential_document_numbers_accepts_font_display_name(self):
+        """add_sequential_document_numbers が font_display_name を受け付ける"""
+        result = self.combiner.add_sequential_document_numbers(
+            pdf_paths=[],
+            font_display_name="MS明朝"
+        )
+        assert not result.success
+        assert result.error_message == "対象ファイルが指定されていません"
+
+    def test_add_document_numbers_accepts_unknown_font_gracefully(self):
+        """存在しないフォント名はフォールバックして TypeError を起こさない"""
+        result = self.combiner.add_document_numbers(
+            pdf_paths=[],
+            output_path="",
+            document_number="1",
+            font_display_name="存在しないフォント"
+        )
+        assert not result.success
+        assert result.error_message == "対象ファイルが指定されていません"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
