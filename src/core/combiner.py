@@ -74,6 +74,42 @@ class PDFCombiner:
             logger.warning(f"日本語フォント登録エラー: {e}。Courierで代替します")
             self.font_name = "Courier"
 
+    # 表示名 → [(ファイルパス, 登録名, TTC判定), ...] の優先順リスト
+    _FONT_MAP = {
+        "メイリオ":        [("C:/Windows/Fonts/meiryo.ttc",         "Meiryo",         True)],
+        "MSゴシック":      [("C:/Windows/Fonts/msgothic.ttc",        "MS-Gothic",      True)],
+        "MS明朝":          [("C:/Windows/Fonts/msmincho.ttc",        "MS-Mincho",      True)],
+        "游ゴシック":      [("C:/Windows/Fonts/YuGothic.ttf",        "Yu-Gothic",      False)],
+        "BIZ UDPゴシック": [
+            ("C:/Windows/Fonts/BIZ-UDPGothicR.ttc", "BIZ-UDP-Gothic", True),   # P版TTC（優先）
+            ("C:/Windows/Fonts/BIZ-UDPGothic.ttf",  "BIZ-UDP-Gothic", False),  # P版TTF
+            ("C:/Windows/Fonts/BIZ-UDGothicR.ttc",  "BIZ-UD-Gothic",  True),   # 非P版フォールバック
+        ],
+    }
+
+    def set_user_font(self, display_name: str) -> bool:
+        """ユーザーが選択したフォントを登録して self.font_name に設定する。
+        候補パスを順に試し、最初に見つかったものを使用する。"""
+        if display_name not in self._FONT_MAP:
+            return False
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        for font_path, font_name, is_ttc in self._FONT_MAP[display_name]:
+            if not Path(font_path).exists():
+                continue
+            try:
+                if is_ttc:
+                    pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                else:
+                    pdfmetrics.registerFont(TTFont(font_name, font_path))
+                self.font_name = font_name
+                logger.info(f"ユーザー選択フォント設定: {display_name} → {font_name} ({font_path})")
+                return True
+            except Exception as e:
+                logger.debug(f"フォント登録失敗（次候補へ）: {font_name} - {e}")
+        logger.warning(f"フォント設定失敗（候補なし）: {display_name}")
+        return False
+
     def combine_pdfs(self, pdf_paths: List[str], output_path: str,
                     add_blank_page: bool = False,
                     add_page_numbers: bool = False,
@@ -974,34 +1010,45 @@ class PDFCombiner:
             # ReportLabキャンバス
             c = canvas.Canvas(packet, pagesize=(page_width, page_height))
 
-            # 日本語フォントを確実に登録（Regular版を優先）
+            # 日本語フォントを確実に登録（self.font_name優先、TTF/TTC両対応）
             font_registered = False
-            japanese_fonts = [
-                ("C:/Windows/Fonts/meiryo.ttc", "Meiryo"),
-                ("C:/Windows/Fonts/msgothic.ttc", "MS-Gothic"),
-                ("C:/Windows/Fonts/msmincho.ttc", "MS-Mincho"),
+            _all_fonts = [
+                ("C:/Windows/Fonts/meiryo.ttc",         "Meiryo",         True),
+                ("C:/Windows/Fonts/msgothic.ttc",        "MS-Gothic",      True),
+                ("C:/Windows/Fonts/msmincho.ttc",        "MS-Mincho",      True),
+                ("C:/Windows/Fonts/YuGothic.ttf",        "Yu-Gothic",      False),
+                ("C:/Windows/Fonts/BIZ-UDPGothicR.ttc", "BIZ-UDP-Gothic", True),
+                ("C:/Windows/Fonts/BIZ-UDPGothic.ttf",  "BIZ-UDP-Gothic", False),
+                ("C:/Windows/Fonts/BIZ-UDGothicR.ttc",  "BIZ-UD-Gothic",  True),
             ]
+            preferred = [(p, n, t) for p, n, t in _all_fonts if n == self.font_name]
+            fallbacks = [(p, n, t) for p, n, t in _all_fonts if n != self.font_name]
+            japanese_fonts = preferred + fallbacks
 
-            for font_path, font_name in japanese_fonts:
+            for font_path, font_name, is_ttc in japanese_fonts:
                 if Path(font_path).exists() and not font_registered:
                     try:
-                        # TTCファイルの場合、subfontIndex=0を試す（Regular版を優先）
-                        pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                        if is_ttc:
+                            pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                        else:
+                            pdfmetrics.registerFont(TTFont(font_name, font_path))
                         c.setFont(font_name, font_size)
                         font_registered = True
-                        logger.info(f"ReportLab日本語フォント登録成功（Regular）: {font_name}")
+                        logger.info(f"ReportLab日本語フォント登録成功: {font_name}")
                         break
                     except Exception as font_error:
-                        try:
-                            # subfontIndex=1（Bold版）をフォールバック
-                            bold_name = f"{font_name}-Bold"
-                            pdfmetrics.registerFont(TTFont(bold_name, font_path, subfontIndex=1))
-                            c.setFont(bold_name, font_size)
-                            font_registered = True
-                            logger.info(f"ReportLab日本語フォント登録成功（Bold）: {bold_name}")
-                            break
-                        except Exception as font_error2:
-                            logger.debug(f"フォント登録失敗: {font_name} - {font_error2}")
+                        if is_ttc:
+                            try:
+                                bold_name = f"{font_name}-Bold"
+                                pdfmetrics.registerFont(TTFont(bold_name, font_path, subfontIndex=1))
+                                c.setFont(bold_name, font_size)
+                                font_registered = True
+                                logger.info(f"ReportLab日本語フォント登録成功（Bold）: {bold_name}")
+                                break
+                            except Exception as font_error2:
+                                logger.debug(f"フォント登録失敗: {font_name} - {font_error2}")
+                        else:
+                            logger.debug(f"フォント登録失敗: {font_name} - {font_error}")
 
             if not font_registered:
                 logger.warning("ReportLab日本語フォント登録失敗")

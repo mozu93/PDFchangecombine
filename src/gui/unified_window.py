@@ -758,6 +758,25 @@ class UnifiedWindow:
         )
         self.preview_label.pack(side="left")
 
+        # 行2.5: フォント選択
+        font_row_doc = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        font_row_doc.pack(fill="x", padx=8, pady=(0, 4))
+
+        ctk.CTkLabel(
+            font_row_doc, text="フォント:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            text_color=CLR_DARK_TEXT
+        ).pack(side="left", padx=(0, 6))
+
+        self.doc_font_var = ctk.StringVar(value="メイリオ")
+        ctk.CTkOptionMenu(
+            font_row_doc,
+            variable=self.doc_font_var,
+            values=["メイリオ", "MSゴシック", "MS明朝", "游ゴシック", "BIZ UDPゴシック"],
+            width=180,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        ).pack(side="left")
+
         # 行3: ファイル名変更オプション
         row3 = ctk.CTkFrame(settings_frame, fg_color="transparent")
         row3.pack(fill="x", padx=8, pady=(0, 4))
@@ -1363,7 +1382,8 @@ class UnifiedWindow:
             # 別スレッドで処理実行
             rename_file = self.rename_file_var.get()
             a3_compat = self.a3_compat_var.get()
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat))
+            selected_font = self.doc_font_var.get()
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font))
             thread.daemon = True
             thread.start()
 
@@ -1375,9 +1395,11 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False) -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ") -> None:
         """挿入実行（別スレッド）"""
         try:
+            self.pdf_combiner.set_user_font(selected_font)
+
             def progress_callback(message, progress):
                 self.root.after(0, lambda: self.document_progress.set(progress / 100))
                 self.root.after(0, lambda: self.document_status.configure(text=message))
@@ -2064,6 +2086,24 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(side="left")
 
+        # フォント選択
+        pn_font_row = ctk.CTkFrame(opt_frame, fg_color="transparent")
+        pn_font_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        ctk.CTkLabel(
+            pn_font_row, text="フォント:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(side="left", padx=(0, 6))
+
+        self.pn_font_var = ctk.StringVar(value="メイリオ")
+        ctk.CTkOptionMenu(
+            pn_font_row,
+            variable=self.pn_font_var,
+            values=["メイリオ", "MSゴシック", "MS明朝", "游ゴシック", "BIZ UDPゴシック"],
+            width=180,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        ).pack(side="left")
+
         # 左綴じ対応スイッチ
         binding_row2 = ctk.CTkFrame(opt_frame, fg_color="transparent")
         binding_row2.pack(fill="x", padx=12, pady=(0, 8))
@@ -2184,15 +2224,18 @@ class UnifiedWindow:
         self.pn_progress.set(0)
 
         binding_compat = self.pn_binding_compat_var.get()
+        selected_font = self.pn_font_var.get()
         threading.Thread(
             target=self._run_pagenumber_insertion,
-            args=(pdf_path, start_page, start_number, binding_compat),
+            args=(pdf_path, start_page, start_number, binding_compat, selected_font),
             daemon=True
         ).start()
 
-    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False) -> None:
+    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False, selected_font: str = "メイリオ") -> None:
         tmp_path = None
         try:
+            self.pdf_combiner.set_user_font(selected_font)
+
             def on_progress(message, progress):
                 self.root.after(0, lambda: self.pn_progress.set(progress / 100))
                 self.root.after(0, lambda: self.pn_status.configure(text=message))
