@@ -462,26 +462,32 @@ class UnifiedWindow:
         )
         self.combination_count_label.pack(side="right", padx=10, pady=6)
         
-        # ドラッグアンドドロップ対応ファイルリスト
-        self.combination_draggable_list = DraggableFileList(
+        # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
+
+        # ステータスラベル（一番下に固定）
+        self.combination_status = ctk.CTkLabel(
             self.combination_tab,
-            height=200,
-            label_text="📋 PDFファイル結合リスト（ドラッグで並び替え可能）"
+            text="PDFファイルを選択してください",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
-        self.combination_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
+        self.combination_status.pack(side="bottom", pady=(0, 8))
 
-        # ドラッグリストのコールバック設定
-        self.combination_draggable_list.on_selection_change = self._on_combination_selection_change
-        self.combination_draggable_list.on_order_change = self._on_combination_order_change
+        # プログレスバー
+        self.combination_progress = ctk.CTkProgressBar(self.combination_tab)
+        self.combination_progress.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+        self.combination_progress.set(0)
 
-        # 初期メッセージ（空の時に表示）
-        self.combination_list_msg = ctk.CTkLabel(
-            self.combination_draggable_list,
-            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-            justify="left"
+        # 結合実行ボタン
+        self.combination_combine_btn = ctk.CTkButton(
+            self.combination_tab,
+            text="📋 PDF結合実行",
+            command=self._start_combination,
+            height=40, state="disabled",
+            fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
+            text_color="white", text_color_disabled="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
-        self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
+        self.combination_combine_btn.pack(side="bottom", pady=(6, 6))
 
         # オプションフレーム（白紙挿入 + ページ番号）
         self.add_blank_page_var = ctk.BooleanVar()
@@ -492,11 +498,11 @@ class UnifiedWindow:
             self.combination_tab, fg_color=CLR_TOOLBAR_BG,
             border_width=1, border_color=CLR_BORDER, corner_radius=6
         )
-        options_frame.pack(fill="x", padx=15, pady=(0, 5))
+        options_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
 
         # 白紙挿入スイッチ
         blank_row = ctk.CTkFrame(options_frame, fg_color="transparent")
-        blank_row.pack(fill="x", padx=8, pady=(6, 2))
+        blank_row.pack(fill="x", padx=8, pady=(4, 2))
 
         self.add_blank_page_switch = ctk.CTkSwitch(
             blank_row,
@@ -525,7 +531,7 @@ class UnifiedWindow:
 
         # 開始ページ・開始番号（別行）
         sub_row = ctk.CTkFrame(options_frame, fg_color="transparent")
-        sub_row.pack(fill="x", padx=(30, 8), pady=(0, 6))
+        sub_row.pack(fill="x", padx=(30, 8), pady=(0, 2))
 
         self.start_page_label = ctk.CTkLabel(
             sub_row, text="開始ページ:", font=ctk.CTkFont(family=FONT_FAMILY, size=14)
@@ -556,7 +562,7 @@ class UnifiedWindow:
 
         # 左綴じ対応スイッチ（ページ番号オプションの下）
         binding_row = ctk.CTkFrame(options_frame, fg_color="transparent")
-        binding_row.pack(fill="x", padx=(30, 8), pady=(0, 6))
+        binding_row.pack(fill="x", padx=(30, 8), pady=(0, 4))
 
         self.combine_pn_binding_switch = ctk.CTkSwitch(
             binding_row,
@@ -569,31 +575,27 @@ class UnifiedWindow:
         self.combine_pn_binding_switch.pack(side="left")
 
         self._toggle_page_number_options()
-        
-        # 結合実行ボタン
-        self.combination_combine_btn = ctk.CTkButton(
+
+        # ── ファイルリスト（残りのスペースを占有） ──
+        self.combination_draggable_list = DraggableFileList(
             self.combination_tab,
-            text="📋 PDF結合実行",
-            command=self._start_combination,
-            height=40, state="disabled",
-            fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
-            text_color="white", text_color_disabled="white",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+            height=200,
+            label_text="📋 PDFファイル結合リスト（ドラッグで並び替え可能）"
         )
-        self.combination_combine_btn.pack(pady=(10, 10))
-        
-        # プログレスバー
-        self.combination_progress = ctk.CTkProgressBar(self.combination_tab)
-        self.combination_progress.pack(fill="x", padx=15, pady=(0, 8))
-        self.combination_progress.set(0)
-        
-        # ステータスラベル
-        self.combination_status = ctk.CTkLabel(
-            self.combination_tab,
-            text="PDFファイルを選択してください",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        self.combination_draggable_list.pack(fill="both", expand=True, padx=15, pady=(0, 4))
+
+        # ドラッグリストのコールバック設定
+        self.combination_draggable_list.on_selection_change = self._on_combination_selection_change
+        self.combination_draggable_list.on_order_change = self._on_combination_order_change
+
+        # 初期メッセージ（空の時に表示）
+        self.combination_list_msg = ctk.CTkLabel(
+            self.combination_draggable_list,
+            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・複数PDFファイルの結合に対応\n・ファイルリストの順序で結合されます\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            justify="left"
         )
-        self.combination_status.pack(pady=(0, 10))
+        self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
     def _create_document_number_ui(self) -> None:
         """資料NO挿入タブUI"""
@@ -673,35 +675,58 @@ class UnifiedWindow:
         )
         self.document_count_label.pack(side="right", padx=10, pady=6)
 
-        # ドラッグアンドドロップ対応ファイルリスト
-        self.document_draggable_list = DraggableFileList(
+        # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
+
+        # ステータスラベル（一番下に固定）
+        self.document_status = ctk.CTkLabel(
             self.document_number_tab,
-            height=200,
-            label_text="📋 資料NO挿入対象ファイルリスト（ドラッグで並び替え可能）"
+            text="PDFファイルを選択して資料番号を入力してください",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
-        self.document_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
+        self.document_status.pack(side="bottom", pady=(0, 8))
 
-        self.document_draggable_list.on_selection_change = self._on_document_selection_change
-        self.document_draggable_list.on_order_change = self._on_document_order_change
+        # プログレスバー
+        self.document_progress = ctk.CTkProgressBar(self.document_number_tab)
+        self.document_progress.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+        self.document_progress.set(0)
 
-        self.document_list_msg = ctk.CTkLabel(
-            self.document_draggable_list,
-            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-            justify="left"
+        # 実行ボタン + プレビューボタン
+        doc_btn_frame = ctk.CTkFrame(self.document_number_tab, fg_color="transparent")
+        doc_btn_frame.pack(side="bottom", pady=(6, 6))
+
+        self.document_preview_btn = ctk.CTkButton(
+            doc_btn_frame,
+            text="🔍 プレビュー",
+            command=self._show_document_number_preview,
+            height=40, width=130, state="disabled",
+            fg_color="transparent", border_width=1,
+            text_color=CLR_DOC_PRIMARY,
+            hover_color=CLR_LIGHT_BG,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
         )
-        self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
+        self.document_preview_btn.pack(side="left", padx=(0, 8))
 
-        # ── 設定フレーム（ファイルリスト下） ──
+        self.document_execute_btn = ctk.CTkButton(
+            doc_btn_frame,
+            text="📄 資料NO挿入実行",
+            command=self._start_document_number_insertion,
+            height=40, state="disabled",
+            fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
+            text_color="white", text_color_disabled="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+        )
+        self.document_execute_btn.pack(side="left")
+
+        # ── 設定フレーム（ボタンの上に固定） ──
         settings_frame = ctk.CTkFrame(
             self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
             border_width=1, border_color=CLR_BORDER, corner_radius=6
         )
-        settings_frame.pack(fill="x", padx=15, pady=(0, 5))
+        settings_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
 
         # 行1: 挿入文字 + 開始番号
         row1 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row1.pack(fill="x", padx=8, pady=(8, 4))
+        row1.pack(fill="x", padx=8, pady=(6, 3))
 
         ctk.CTkLabel(
             row1, text="文字選択:",
@@ -792,7 +817,7 @@ class UnifiedWindow:
 
         # 行3: ファイル名変更オプション
         row3 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row3.pack(fill="x", padx=8, pady=(0, 4))
+        row3.pack(fill="x", padx=8, pady=(0, 3))
 
         self.rename_file_var = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(
@@ -804,7 +829,7 @@ class UnifiedWindow:
 
         # 行4: A3縦ページ左綴じ対応オプション
         row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row4.pack(fill="x", padx=8, pady=(0, 8))
+        row4.pack(fill="x", padx=8, pady=(0, 5))
 
         self.a3_compat_var = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(
@@ -814,45 +839,24 @@ class UnifiedWindow:
             progress_color=CLR_DOC_PRIMARY
         ).pack(side="left")
 
-        # 実行ボタン + プレビューボタン
-        doc_btn_frame = ctk.CTkFrame(self.document_number_tab, fg_color="transparent")
-        doc_btn_frame.pack(pady=(8, 8))
-
-        self.document_preview_btn = ctk.CTkButton(
-            doc_btn_frame,
-            text="🔍 プレビュー",
-            command=self._show_document_number_preview,
-            height=40, width=130, state="disabled",
-            fg_color="transparent", border_width=1,
-            text_color=CLR_DOC_PRIMARY,
-            hover_color=CLR_LIGHT_BG,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
-        )
-        self.document_preview_btn.pack(side="left", padx=(0, 8))
-
-        self.document_execute_btn = ctk.CTkButton(
-            doc_btn_frame,
-            text="📄 資料NO挿入実行",
-            command=self._start_document_number_insertion,
-            height=40, state="disabled",
-            fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
-            text_color="white", text_color_disabled="white",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
-        )
-        self.document_execute_btn.pack(side="left")
-
-        # プログレスバー
-        self.document_progress = ctk.CTkProgressBar(self.document_number_tab)
-        self.document_progress.pack(fill="x", padx=15, pady=(0, 8))
-        self.document_progress.set(0)
-
-        # ステータスラベル
-        self.document_status = ctk.CTkLabel(
+        # ── ファイルリスト（残りのスペースを占有） ──
+        self.document_draggable_list = DraggableFileList(
             self.document_number_tab,
-            text="PDFファイルを選択して資料番号を入力してください",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+            height=200,
+            label_text="📋 資料NO挿入対象ファイルリスト（ドラッグで並び替え可能）"
         )
-        self.document_status.pack(pady=(0, 10))
+        self.document_draggable_list.pack(fill="both", expand=True, padx=15, pady=(0, 4))
+
+        self.document_draggable_list.on_selection_change = self._on_document_selection_change
+        self.document_draggable_list.on_order_change = self._on_document_order_change
+
+        self.document_list_msg = ctk.CTkLabel(
+            self.document_draggable_list,
+            text="📋 PDFファイルをここにドラッグ&ドロップしてください\n\n・連番で資料NO（資料1, 資料2...）を自動挿入\n・ドラッグで順序変更、↑↓ボタンでも調整可能",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            justify="left"
+        )
+        self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
     def _open_folder(self, folder_path: str):
         """指定されたフォルダをエクスプローラーで開く"""
