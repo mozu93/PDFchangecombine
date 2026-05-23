@@ -4,8 +4,10 @@ Officeファイル変換モジュール
 """
 
 import os
+import shutil
+import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 import time
 
 # Microsoft Office COM API用ライブラリ（Windows専用）
@@ -13,12 +15,35 @@ import time
 
 from ..utils.logger import logger
 
+# RPC_E_CALL_REJECTED: COMサーバービジー時のエラーコード
+_RPC_E_CALL_REJECTED = -2147418111
+
 
 class OfficeConverter:
     """Office文書からPDF変換を行うクラス"""
-    
+
     def __init__(self):
         logger.info("Officeコンバーター初期化完了 - Microsoft Office COM API専用")
+
+    def _copy_to_temp_if_onedrive(self, input_path: str) -> Tuple[str, str]:
+        """
+        OneDriveパスのファイルを一時ディレクトリにコピーする。
+        OneDriveの同期処理がCOM APIに干渉するのを防ぐため。
+
+        Returns:
+            (実際に変換に使うパス, 一時ディレクトリパスまたは空文字)
+        """
+        if 'OneDrive' in input_path or 'onedrive' in input_path.lower():
+            try:
+                temp_dir = tempfile.mkdtemp(prefix="pdf_conv_")
+                temp_path = os.path.join(temp_dir, Path(input_path).name)
+                shutil.copy2(input_path, temp_path)
+                logger.info(f"OneDriveファイルを一時フォルダにコピー: {Path(input_path).name} -> {temp_dir}")
+                return temp_path, temp_dir
+            except Exception as e:
+                logger.warning(f"一時コピー失敗、元パスで続行: {e}")
+                return input_path, ""
+        return input_path, ""
     
     def convert_to_pdf(self, input_path: str, output_path: str, split_sheets: bool = False) -> List[str]:
         """
@@ -50,52 +75,100 @@ class OfficeConverter:
     
     def _convert_word_to_pdf(self, input_path: str, output_path: str) -> List[str]:
         """Word文書のPDF変換（Microsoft Office COM APIのみ使用）"""
+        # OneDriveパスは一時フォルダにコピーして変換
+        work_path, temp_dir = self._copy_to_temp_if_onedrive(input_path)
         try:
-            # Microsoft Office COM APIでのみ変換を試行
-            generated_files = self._try_office_conversion(input_path, output_path)
-            if generated_files:
-                return generated_files
-            
-            # COM APIが失敗した場合はエラー
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    generated_files = self._try_office_conversion(work_path, output_path)
+                    if generated_files:
+                        return generated_files
+                except Exception as e:
+                    logger.warning(f"Word変換 試行{attempt + 1}/{max_retries} 例外: {e}")
+
+                if attempt < max_retries - 1:
+                    wait_sec = (attempt + 1) * 2
+                    logger.info(f"Word変換リトライ待機 {wait_sec}秒 ({attempt + 1}/{max_retries}): {Path(input_path).name}")
+                    time.sleep(wait_sec)
+
             logger.error(f"Word変換失敗 - Microsoft Word COM API変換エラー: {input_path}")
             return []
-            
+
         except Exception as e:
             logger.error(f"Word変換エラー: {input_path} - {str(e)}")
             return []
+        finally:
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
     
     def _convert_excel_to_pdf(self, input_path: str, output_path: str, split_sheets: bool = False) -> List[str]:
         """Excel文書のPDF変換（Microsoft Office COM APIのみ使用）"""
+        # OneDriveパスは一時フォルダにコピーして変換
+        work_path, temp_dir = self._copy_to_temp_if_onedrive(input_path)
         try:
-            # Microsoft Office COM APIでのみ変換を試行
-            generated_files = self._try_office_conversion(input_path, output_path, split_sheets)
-            if generated_files:
-                return generated_files
-            
-            # COM APIが失敗した場合はエラー
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    generated_files = self._try_office_conversion(work_path, output_path, split_sheets)
+                    if generated_files:
+                        return generated_files
+                except Exception as e:
+                    logger.warning(f"Excel変換 試行{attempt + 1}/{max_retries} 例外: {e}")
+
+                if attempt < max_retries - 1:
+                    wait_sec = (attempt + 1) * 2
+                    logger.info(f"Excel変換リトライ待機 {wait_sec}秒 ({attempt + 1}/{max_retries}): {Path(input_path).name}")
+                    time.sleep(wait_sec)
+
             logger.error(f"Excel変換失敗 - Microsoft Excel COM API変換エラー: {input_path}")
             return []
-            
+
         except Exception as e:
             logger.error(f"Excel変換エラー: {input_path} - {str(e)}")
             return []
+        finally:
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
     
     
     def _convert_powerpoint_to_pdf(self, input_path: str, output_path: str) -> List[str]:
         """PowerPoint文書のPDF変換（Microsoft Office COM APIのみ使用）"""
+        # OneDriveパスは一時フォルダにコピーして変換
+        work_path, temp_dir = self._copy_to_temp_if_onedrive(input_path)
         try:
-            # Microsoft Office COM APIでのみ変換を試行
-            generated_files = self._try_office_conversion(input_path, output_path)
-            if generated_files:
-                return generated_files
-            
-            # COM APIが失敗した場合はエラー
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    generated_files = self._try_office_conversion(work_path, output_path)
+                    if generated_files:
+                        return generated_files
+                except Exception as e:
+                    logger.warning(f"PowerPoint変換 試行{attempt + 1}/{max_retries} 例外: {e}")
+
+                if attempt < max_retries - 1:
+                    wait_sec = (attempt + 1) * 2
+                    logger.info(f"PowerPoint変換リトライ待機 {wait_sec}秒 ({attempt + 1}/{max_retries}): {Path(input_path).name}")
+                    time.sleep(wait_sec)
+
             logger.error(f"PowerPoint変換失敗 - Microsoft PowerPoint COM API変換エラー: {input_path}")
             return []
-            
+
         except Exception as e:
             logger.error(f"PowerPoint変換エラー: {input_path} - {str(e)}")
             return []
+        finally:
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
     
     
     def _try_office_conversion(self, input_path: str, output_path: str, split_sheets: bool = False) -> List[str]:
@@ -376,6 +449,8 @@ class OfficeConverter:
                     word_app.Quit()
                     # COMオブジェクトの明示的解放
                     del word_app
+                    # Wordプロセスが完全に終了するまで待機（次回RPC_E_CALL_REJECTEDを防ぐ）
+                    time.sleep(1)
 
                 if excel_app:
                     # 全てのワークブックを強制クローズ
@@ -386,6 +461,7 @@ class OfficeConverter:
                         pass
                     excel_app.Quit()
                     del excel_app
+                    time.sleep(1)
 
                 if powerpoint_app:
                     # 全てのプレゼンテーションを強制クローズ
@@ -396,6 +472,7 @@ class OfficeConverter:
                         pass
                     powerpoint_app.Quit()
                     del powerpoint_app
+                    time.sleep(1)
 
                 # COMライブラリのクリーンアップ（個別変換では行わない）
                 # アプリケーション終了時のみCoUninitializeを実行
