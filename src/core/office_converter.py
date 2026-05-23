@@ -232,11 +232,22 @@ class OfficeConverter:
                         if file_ext == '.doc':
                             # .docファイル: シンプルな設定で開く
                             logger.info(f".docファイルを開いています: {Path(input_path).name}")
-                            doc = word_app.Documents.Open(input_abs_path, ReadOnly=True, ConfirmConversions=False)
+                            doc = word_app.Documents.Open(
+                                input_abs_path,
+                                ReadOnly=True,
+                                ConfirmConversions=False,
+                                AddToRecentFiles=False,  # 最近使ったファイルに追加しない
+                                Revert=False             # 再読み込み確認を抑制
+                            )
                         else:
                             # .docxファイル: 通常処理
                             logger.info(f".docxファイルを開いています: {Path(input_path).name}")
-                            doc = word_app.Documents.Open(input_abs_path, ReadOnly=True)
+                            doc = word_app.Documents.Open(
+                                input_abs_path,
+                                ReadOnly=True,
+                                AddToRecentFiles=False,  # 最近使ったファイルに追加しない
+                                Revert=False             # 再読み込み確認を抑制
+                            )
                     except Exception as open_error:
                         logger.warning(f"通常のOpen処理失敗: {open_error}")
                         try:
@@ -304,7 +315,13 @@ class OfficeConverter:
 
                     # ワークブックを開く
                     logger.info(f"Excelファイルを開いています: {Path(input_path).name}")
-                    workbook = excel_app.Workbooks.Open(input_abs_path, ReadOnly=True)
+                    workbook = excel_app.Workbooks.Open(
+                        input_abs_path,
+                        UpdateLinks=0,              # 外部リンク更新ダイアログを抑制
+                        ReadOnly=True,
+                        IgnoreReadOnlyRecommended=True,
+                        Notify=False                # 「別アプリで開かれています」ダイアログを抑制
+                    )
                     
                     generated_files = []
                     # シートごとにPDF化するオプションを確認
