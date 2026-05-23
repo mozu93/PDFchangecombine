@@ -106,8 +106,18 @@ class UnifiedWindow:
     def _setup_window(self) -> None:
         """ウィンドウ初期設定"""
         self.root.title(WINDOW_TITLE)
-        self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+
+        # 画面サイズに合わせてウィンドウ高さを自動調整
+        self.root.update_idletasks()
+        screen_h = self.root.winfo_screenheight()
+        # タスクバー等を考慮して画面高さの90%を上限にする
+        max_h = int(screen_h * 0.90)
+        win_h = min(WINDOW_HEIGHT, max_h)
+        win_h = max(win_h, WINDOW_MIN_HEIGHT)  # 最小高さは保証
+
+        self.root.geometry(f"{WINDOW_WIDTH}x{win_h}")
         self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        logger.info(f"ウィンドウサイズ設定: {WINDOW_WIDTH}x{win_h} (画面高さ: {screen_h}px)")
         # CustomTkinter 初期化完了後にアイコンを設定（即時だと上書きされる）
         self.root.after(200, self._set_window_icon)
         
@@ -132,11 +142,15 @@ class UnifiedWindow:
         except Exception as e:
             logger.debug(f"アイコン設定スキップ: {e}")
 
-        # ウィンドウを中央に配置
+        # ウィンドウを中央に配置（現在のウィンドウ実寸を取得して計算）
         self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (WINDOW_WIDTH // 2)
-        y = (self.root.winfo_screenheight() // 2) - (WINDOW_HEIGHT // 2)
-        self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}+{x}+{y}")
+        win_w = self.root.winfo_width()
+        win_h = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (win_w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (win_h // 2)
+        # 画面上端より上にはみ出さないよう保護
+        y = max(0, y)
+        self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
         
         # アプリ終了時の処理
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
