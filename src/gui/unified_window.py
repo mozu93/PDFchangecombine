@@ -142,15 +142,14 @@ class UnifiedWindow:
         except Exception as e:
             logger.debug(f"アイコン設定スキップ: {e}")
 
-        # ウィンドウを中央に配置（現在のウィンドウ実寸を取得して計算）
+        # ウィンドウを中央に配置（横幅は WINDOW_WIDTH 固定、縦のみ実寸を使用）
         self.root.update_idletasks()
-        win_w = self.root.winfo_width()
         win_h = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (win_w // 2)
+        x = (self.root.winfo_screenwidth() // 2) - (WINDOW_WIDTH // 2)
         y = (self.root.winfo_screenheight() // 2) - (win_h // 2)
         # 画面上端より上にはみ出さないよう保護
         y = max(0, y)
-        self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        self.root.geometry(f"{WINDOW_WIDTH}x{win_h}+{x}+{y}")
         
         # アプリ終了時の処理
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
