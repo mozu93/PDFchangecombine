@@ -110,17 +110,20 @@ class UnifiedWindow:
         # 画面サイズに合わせてウィンドウ高さを自動調整
         self.root.update_idletasks()
         screen_h = self.root.winfo_screenheight()
-        # タスクバー等を考慮して画面高さの90%を上限にする
-        max_h = int(screen_h * 0.90)
+        # タスクバー・タイトルバー等を考慮して画面高さ - 80px を上限にする
+        max_h = screen_h - 80
         win_h = min(WINDOW_HEIGHT, max_h)
         win_h = max(win_h, WINDOW_MIN_HEIGHT)  # 最小高さは保証
+
+        # インスタンス変数に保存（_set_window_icon で再利用）
+        self._win_h = win_h
 
         self.root.geometry(f"{WINDOW_WIDTH}x{win_h}")
         self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
         logger.info(f"ウィンドウサイズ設定: {WINDOW_WIDTH}x{win_h} (画面高さ: {screen_h}px)")
         # CustomTkinter 初期化完了後にアイコンを設定（即時だと上書きされる）
         self.root.after(200, self._set_window_icon)
-        
+
     def _set_window_icon(self) -> None:
         """ウィンドウアイコン設定（after() で遅延呼び出し）"""
         try:
@@ -142,12 +145,10 @@ class UnifiedWindow:
         except Exception as e:
             logger.debug(f"アイコン設定スキップ: {e}")
 
-        # ウィンドウを中央に配置（横幅は WINDOW_WIDTH 固定、縦のみ実寸を使用）
-        self.root.update_idletasks()
-        win_h = self.root.winfo_height()
+        # ウィンドウを中央に配置（_setup_windowで計算済みのサイズを再利用）
+        win_h = getattr(self, '_win_h', WINDOW_HEIGHT)
         x = (self.root.winfo_screenwidth() // 2) - (WINDOW_WIDTH // 2)
         y = (self.root.winfo_screenheight() // 2) - (win_h // 2)
-        # 画面上端より上にはみ出さないよう保護
         y = max(0, y)
         self.root.geometry(f"{WINDOW_WIDTH}x{win_h}+{x}+{y}")
         
@@ -312,14 +313,58 @@ class UnifiedWindow:
         )
         self.conversion_count_label.pack(side="right", padx=10, pady=6)
 
-        # ファイルリスト（DraggableFileList・ドラッグ無効）
+        # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
+
+        # ステータスラベル（一番下）
+        self.conversion_status = ctk.CTkLabel(
+            self.conversion_tab,
+            text="ファイルを選択してください",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        self.conversion_status.pack(side="bottom", pady=(0, 8))
+
+        # プログレスバー
+        self.conversion_progress = ctk.CTkProgressBar(self.conversion_tab)
+        self.conversion_progress.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+        self.conversion_progress.set(0)
+
+        # 変換実行ボタン
+        self.conversion_convert_btn = ctk.CTkButton(
+            self.conversion_tab,
+            text="🔄 PDF変換実行",
+            command=self._start_conversion,
+            height=40, state="disabled",
+            fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
+            text_color="white", text_color_disabled="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+        )
+        self.conversion_convert_btn.pack(side="bottom", pady=(6, 6))
+
+        # Excelシート分割オプション
+        self.excel_options_frame = ctk.CTkFrame(
+            self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
+            border_width=1, border_color=CLR_BORDER, corner_radius=6
+        )
+        self.excel_options_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+
+        self.split_excel_sheets_switch = ctk.CTkSwitch(
+            self.excel_options_frame,
+            text="Excelシートが複数ある場合は、すべてのシートをそれぞれPDFに変換する",
+            variable=self.split_excel_sheets_var,
+            onvalue=True, offvalue=False,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_CONV_PRIMARY
+        )
+        self.split_excel_sheets_switch.pack(side="left", padx=(10, 8), pady=6)
+
+        # ── ファイルリスト（残りのスペースを占有） ──
         self.conversion_draggable_list = DraggableFileList(
             self.conversion_tab,
             drag_enabled=False,
             height=200,
             label_text="📁 変換対象ファイルリスト"
         )
-        self.conversion_draggable_list.pack(fill="both", expand=True, padx=15, pady=8)
+        self.conversion_draggable_list.pack(fill="both", expand=True, padx=15, pady=(0, 4))
         self.conversion_draggable_list.on_selection_change = self._on_conversion_selection_change
 
         # 初期表示メッセージ
@@ -339,48 +384,6 @@ class UnifiedWindow:
             justify="left"
         )
         self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
-
-        # Excelシート分割オプション（ファイルリスト下）
-        self.excel_options_frame = ctk.CTkFrame(
-            self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
-            border_width=1, border_color=CLR_BORDER, corner_radius=6
-        )
-        self.excel_options_frame.pack(fill="x", padx=15, pady=(0, 5))
-
-        self.split_excel_sheets_switch = ctk.CTkSwitch(
-            self.excel_options_frame,
-            text="Excelシートが複数ある場合は、すべてのシートをそれぞれPDFに変換する",
-            variable=self.split_excel_sheets_var,
-            onvalue=True, offvalue=False,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
-            progress_color=CLR_CONV_PRIMARY
-        )
-        self.split_excel_sheets_switch.pack(side="left", padx=(10, 8), pady=6)
-
-        # 変換実行ボタン
-        self.conversion_convert_btn = ctk.CTkButton(
-            self.conversion_tab,
-            text="🔄 PDF変換実行",
-            command=self._start_conversion,
-            height=40, state="disabled",
-            fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
-            text_color="white", text_color_disabled="white",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
-        )
-        self.conversion_convert_btn.pack(pady=(8, 8))
-
-        # プログレスバー
-        self.conversion_progress = ctk.CTkProgressBar(self.conversion_tab)
-        self.conversion_progress.pack(fill="x", padx=15, pady=(0, 8))
-        self.conversion_progress.set(0)
-
-        # ステータスラベル
-        self.conversion_status = ctk.CTkLabel(
-            self.conversion_tab,
-            text="ファイルを選択してください",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
-        )
-        self.conversion_status.pack(pady=(0, 10))
     
     def _create_combination_ui(self) -> None:
         """PDF結合タブUI"""
