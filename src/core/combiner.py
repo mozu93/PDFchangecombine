@@ -461,6 +461,7 @@ class PDFCombiner:
                            document_number: str, document_prefix: str = "資料",
                            rename_file: bool = False,
                            a3_portrait_compat: bool = False,
+                           insert_all_pages: bool = False,
                            progress_callback: Optional[callable] = None) -> CombineResult:
         """
         PDFファイルに資料NO挿入（各ファイル個別処理・元ファイル同名保存）
@@ -502,7 +503,7 @@ class PDFCombiner:
                         progress_callback(f"処理中: {Path(pdf_path).name}", progress)
 
                     # 元ファイルのバックアップと資料NO挿入
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -550,6 +551,7 @@ class PDFCombiner:
                                       prefix_number: str = "1", document_prefix: str = "資料",
                                       rename_file: bool = False,
                                       a3_portrait_compat: bool = False,
+                                      insert_all_pages: bool = False,
                                       progress_callback: Optional[callable] = None) -> CombineResult:
         """
         複数PDFファイルに連番で資料NO挿入
@@ -631,7 +633,7 @@ class PDFCombiner:
                     logger.info(f"ファイル処理開始: {Path(pdf_path).name} → {document_number}")
 
                     # 資料NO挿入実行
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -730,13 +732,14 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False) -> bool:
+    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False) -> bool:
         """
         単一PDFファイルに資料NO挿入（元ファイルバックアップ付き）
 
         Args:
             pdf_path: 対象PDFファイルパス
             document_number: 資料番号
+            insert_all_pages: Trueのとき全ページに挿入、FalseのときはP.1のみ
 
         Returns:
             bool: 処理成功時True
@@ -760,13 +763,28 @@ class PDFCombiner:
             shutil.copy2(pdf_path, backup_path)
             logger.info(f"元ファイルをバックアップ: {backup_path}")
 
-            # PDFを開いて資料NO挿入（1ページ目のみ、フリーズ対策）
+            # PDFを開いて資料NO挿入
             with fitz.open(pdf_path) as doc:
                 document_text = f"{document_prefix}{document_number}"
 
-                # 1ページ目のみ処理
-                if len(doc) > 0:
-                    page = doc[0]  # 最初のページのみ
+                # 処理対象ページインデックスを決定
+                if len(doc) == 0:
+                    logger.warning("PDFにページが存在しません")
+                    return None
+
+                page_indices = range(len(doc)) if insert_all_pages else [0]
+
+                # フォント設定（全ページ共通）
+                font_size = 20
+                font_file = self._get_japanese_font_file()
+
+                # テキスト幅計算（日本語テキストベース・全ページ共通）
+                japanese_chars = len([c for c in document_text if ord(c) > 127])
+                ascii_chars = len(document_text) - japanese_chars
+                text_width = japanese_chars * font_size + ascii_chars * (font_size * 0.6)
+
+                for page_idx in page_indices:
+                    page = doc[page_idx]
 
                     # ページ情報を取得
                     original_rotation = page.rotation
@@ -775,167 +793,158 @@ class PDFCombiner:
                     if original_rotation != 0:
                         page.set_rotation(0)
 
-                page_width = page.rect.width
-                page_height = page.rect.height
+                    page_width = page.rect.width
+                    page_height = page.rect.height
 
-                # フォント設定
-                font_size = 20
-                font_file = self._get_japanese_font_file()
+                    # 左綴じ対応が必要なページ検出（rotation=0のみ）
+                    # A3縦: 高さ>1000pt かつ 縦長
+                    is_a3_portrait = (original_rotation == 0
+                                      and page_height > 1000
+                                      and page_height > page_width)
+                    # 横長ページ: rotation=0 の横長（A3横=幅約1190ptを除外するため幅<1100pt）
+                    # PowerPoint 16:9(約960pt)・A4横(約842pt)等をすべて対象に含める
+                    is_landscape_for_binding = (original_rotation == 0
+                                                and page_width > page_height
+                                                and page_width < 1100)
+                    needs_bottom_right = a3_portrait_compat and (is_a3_portrait or is_landscape_for_binding)
 
-                # テキスト幅計算（日本語テキストベース）
-                japanese_chars = len([c for c in document_text if ord(c) > 127])
-                ascii_chars = len(document_text) - japanese_chars
-                text_width = japanese_chars * font_size + ascii_chars * (font_size * 0.6)
-
-                # 左綴じ対応が必要なページ検出（rotation=0のみ）
-                # A3縦: 高さ>1000pt かつ 縦長
-                is_a3_portrait = (original_rotation == 0
-                                  and page_height > 1000
-                                  and page_height > page_width)
-                # 横長ページ: rotation=0 の横長（A3横=幅約1190ptを除外するため幅<1100pt）
-                # PowerPoint 16:9(約960pt)・A4横(約842pt)等をすべて対象に含める
-                is_landscape_for_binding = (original_rotation == 0
-                                            and page_width > page_height
-                                            and page_width < 1100)
-                needs_bottom_right = a3_portrait_compat and (is_a3_portrait or is_landscape_for_binding)
-
-                # 座標計算（右上配置、回転対応）
-                margin = 28.35  # 10mm
-                if original_rotation == 0:
-                    if needs_bottom_right:
-                        # 左綴じ対応: 右下 + 90°CW回転テキスト
-                        # 回転後の視覚幅=font_size, 視覚高=text_width で座標を配置
-                        x = page_width - margin - font_size
-                        y = page_height - margin - text_width
-                        if is_landscape_for_binding:
-                            logger.info(f"横長ページ検出: 左綴じ対応(右下+90°CW) (w={page_width:.0f}, h={page_height:.0f})")
+                    # 座標計算（右上配置、回転対応）
+                    margin = 28.35  # 10mm
+                    if original_rotation == 0:
+                        if needs_bottom_right:
+                            # 左綴じ対応: 右下 + 90°CW回転テキスト
+                            # 回転後の視覚幅=font_size, 視覚高=text_width で座標を配置
+                            x = page_width - margin - font_size
+                            y = page_height - margin - text_width
+                            if is_landscape_for_binding:
+                                logger.info(f"横長ページ検出: 左綴じ対応(右下+90°CW) (w={page_width:.0f}, h={page_height:.0f})")
+                            else:
+                                logger.info(f"A3縦検出: 左綴じ対応(右下+90°CW) (w={page_width:.0f}, h={page_height:.0f})")
                         else:
-                            logger.info(f"A3縦検出: 左綴じ対応(右下+90°CW) (w={page_width:.0f}, h={page_height:.0f})")
+                            x = page_width - text_width - margin
+                            y = margin + font_size
+                        rotate_param = 0
+                    elif original_rotation == 90:
+                        x = margin
+                        y = margin + font_size
+                        rotate_param = -90
+                    elif original_rotation == 180:
+                        x = margin + text_width
+                        y = page_height - margin
+                        rotate_param = 180
+                    elif original_rotation == 270:
+                        x = page_width - margin
+                        y = page_height - margin
+                        rotate_param = -90
                     else:
                         x = page_width - text_width - margin
                         y = margin + font_size
-                    rotate_param = 0
-                elif original_rotation == 90:
-                    x = margin
-                    y = margin + font_size
-                    rotate_param = -90
-                elif original_rotation == 180:
-                    x = margin + text_width
-                    y = page_height - margin
-                    rotate_param = 180
-                elif original_rotation == 270:
-                    x = page_width - margin
-                    y = page_height - margin
-                    rotate_param = -90
-                else:
-                    x = page_width - text_width - margin
-                    y = margin + font_size
-                    rotate_param = 0
+                        rotate_param = 0
 
-                # テキスト挿入（全回転角度でReportLabオーバーレイ使用）
-                try:
-                    if original_rotation in [90, 180, 270]:
-                        # 回転ページでReportLabオーバーレイを使用
-                        logger.info(f"{original_rotation}度回転ページでReportLabオーバーレイを使用")
-
-                        # 回転角度別の座標調整（右上角配置）
-                        if original_rotation == 90:
-                            # 90度回転: テキストを右上角に横向き配置
-                            overlay_x = page_width - margin - text_width
-                            overlay_y = page_height - margin - font_size
-                            logger.info(f"90度回転ページ用オーバーレイ座標（右上角横向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
-                        elif original_rotation == 180:
-                            # 180度回転: テキストを右上角に逆向き配置
-                            overlay_x = page_width - margin - text_width
-                            overlay_y = margin + font_size
-                            logger.info(f"180度回転ページ用オーバーレイ座標（右上角逆向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
-                        elif original_rotation == 270:
-                            # 270度回転: テキストを右上角に縦向き配置
-                            overlay_x = page_width - margin - font_size
-                            overlay_y = page_height - margin - text_width
-                            logger.info(f"270度回転ページ用オーバーレイ座標（右上角縦向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
-
-                        overlay_data = self._create_japanese_overlay_with_proper_embedding(
-                            page_width, page_height, document_text, overlay_x, overlay_y, font_size, original_rotation
-                        )
-
-                        if overlay_data:
-                            # オーバーレイを適用
-                            with fitz.open("pdf", overlay_data) as overlay_pdf:
-                                overlay_page = overlay_pdf[0]
-                                page.show_pdf_page(page.rect, overlay_pdf, 0)
-                            logger.info(f"{original_rotation}度回転ページ: ReportLabオーバーレイで挿入成功 {document_text}")
-
-                            # 四角囲いを描画
-                            self._draw_simple_rectangle(page, overlay_x, overlay_y, text_width, font_size, original_rotation)
-                        else:
-                            logger.warning(f"{original_rotation}度回転ページ: ReportLabオーバーレイ作成失敗")
-                            # フォールバック: 基本フォント
-                            page.insert_text(
-                                (overlay_x, overlay_y),
-                                document_text,
-                                fontname="cour",
-                                fontsize=font_size,
-                                color=(0, 0, 0)
-                            )
-                            logger.warning(f"{original_rotation}度回転ページ: Courierフォントでフォールバック")
-
-                    else:
-                        # 通常ページ（0度）の場合はReportLabオーバーレイ
-                        lb_text_rotate = -90 if needs_bottom_right else 0
-                        overlay_data = self._create_japanese_overlay_with_proper_embedding(
-                            page_width, page_height, document_text, x, y, font_size, rotate_param,
-                            text_rotate=lb_text_rotate
-                        )
-
-                        if overlay_data:
-                            # オーバーレイを適用
-                            with fitz.open("pdf", overlay_data) as overlay_doc:
-                                page.show_pdf_page(page.rect, overlay_doc, 0)
-                            logger.info(f"ReportLab確実日本語オーバーレイで挿入: {document_text}")
-                        else:
-                            # ReportLab失敗時はひらがなでフォールバック
-                            kana_text = document_text.replace("資料", "シリョウ")
-                            page.insert_text(
-                                (x, y),
-                                kana_text,
-                                fontname="cour",
-                                fontsize=font_size,
-                                color=(0, 0, 0),
-                                rotate=rotate_param
-                            )
-                            logger.warning(f"ReportLab失敗、ひらがなで挿入: {kana_text}")
-
-                        # 四角囲いの描画（PyMuPDF）
-                        if needs_bottom_right:
-                            # 90°CW回転テキスト: 幅=font_size, 高さ=text_width
-                            try:
-                                rp = 4
-                                rect = fitz.Rect(x - rp, y - rp,
-                                                 x + font_size + rp, y + text_width + rp)
-                                page.draw_rect(rect, color=(0, 0, 0), width=1.5)
-                            except Exception as re:
-                                logger.debug(f"左綴じ矩形描画エラー: {re}")
-                        else:
-                            self._draw_simple_rectangle(page, x, y, text_width, font_size, rotate_param)
-
-                except Exception as e:
-                    logger.error(f"1ページ目テキスト挿入エラー: {e}")
-                    # エラー時の最終フォールバック
+                    # テキスト挿入（全回転角度でReportLabオーバーレイ使用）
                     try:
-                        fallback_text = "Doc " + document_text.replace("資料", "")
-                        page.insert_text((x, y), fallback_text, fontsize=font_size, color=(0, 0, 0))
-                        logger.warning(f"最終フォールバック: {fallback_text}")
-                    except Exception as fallback_error:
-                        logger.error(f"最終フォールバックも失敗: {fallback_error}")
+                        if original_rotation in [90, 180, 270]:
+                            # 回転ページでReportLabオーバーレイを使用
+                            logger.info(f"{original_rotation}度回転ページでReportLabオーバーレイを使用")
 
-                # 回転を元に戻す
-                if original_rotation != 0:
-                    page.set_rotation(original_rotation)
+                            # 回転角度別の座標調整（右上角配置）
+                            if original_rotation == 90:
+                                # 90度回転: テキストを右上角に横向き配置
+                                overlay_x = page_width - margin - text_width
+                                overlay_y = page_height - margin - font_size
+                                logger.info(f"90度回転ページ用オーバーレイ座標（右上角横向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
+                            elif original_rotation == 180:
+                                # 180度回転: テキストを右上角に逆向き配置
+                                overlay_x = page_width - margin - text_width
+                                overlay_y = margin + font_size
+                                logger.info(f"180度回転ページ用オーバーレイ座標（右上角逆向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
+                            elif original_rotation == 270:
+                                # 270度回転: テキストを右上角に縦向き配置
+                                overlay_x = page_width - margin - font_size
+                                overlay_y = page_height - margin - text_width
+                                logger.info(f"270度回転ページ用オーバーレイ座標（右上角縦向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
 
-                    logger.info(f"1ページ目に資料NO挿入完了: {document_text}")
-                else:
-                    logger.warning("PDFにページが存在しません")
+                            overlay_data = self._create_japanese_overlay_with_proper_embedding(
+                                page_width, page_height, document_text, overlay_x, overlay_y, font_size, original_rotation
+                            )
+
+                            if overlay_data:
+                                # オーバーレイを適用
+                                with fitz.open("pdf", overlay_data) as overlay_pdf:
+                                    overlay_page = overlay_pdf[0]
+                                    page.show_pdf_page(page.rect, overlay_pdf, 0)
+                                logger.info(f"{original_rotation}度回転ページ: ReportLabオーバーレイで挿入成功 {document_text}")
+
+                                # 四角囲いを描画
+                                self._draw_simple_rectangle(page, overlay_x, overlay_y, text_width, font_size, original_rotation)
+                            else:
+                                logger.warning(f"{original_rotation}度回転ページ: ReportLabオーバーレイ作成失敗")
+                                # フォールバック: 基本フォント
+                                page.insert_text(
+                                    (overlay_x, overlay_y),
+                                    document_text,
+                                    fontname="cour",
+                                    fontsize=font_size,
+                                    color=(0, 0, 0)
+                                )
+                                logger.warning(f"{original_rotation}度回転ページ: Courierフォントでフォールバック")
+
+                        else:
+                            # 通常ページ（0度）の場合はReportLabオーバーレイ
+                            lb_text_rotate = -90 if needs_bottom_right else 0
+                            overlay_data = self._create_japanese_overlay_with_proper_embedding(
+                                page_width, page_height, document_text, x, y, font_size, rotate_param,
+                                text_rotate=lb_text_rotate
+                            )
+
+                            if overlay_data:
+                                # オーバーレイを適用
+                                with fitz.open("pdf", overlay_data) as overlay_doc:
+                                    page.show_pdf_page(page.rect, overlay_doc, 0)
+                                logger.info(f"ReportLab確実日本語オーバーレイで挿入: {document_text}")
+                            else:
+                                # ReportLab失敗時はひらがなでフォールバック
+                                kana_text = document_text.replace("資料", "シリョウ")
+                                page.insert_text(
+                                    (x, y),
+                                    kana_text,
+                                    fontname="cour",
+                                    fontsize=font_size,
+                                    color=(0, 0, 0),
+                                    rotate=rotate_param
+                                )
+                                logger.warning(f"ReportLab失敗、ひらがなで挿入: {kana_text}")
+
+                            # 四角囲いの描画（PyMuPDF）
+                            if needs_bottom_right:
+                                # 90°CW回転テキスト: 幅=font_size, 高さ=text_width
+                                try:
+                                    rp = 4
+                                    rect = fitz.Rect(x - rp, y - rp,
+                                                     x + font_size + rp, y + text_width + rp)
+                                    page.draw_rect(rect, color=(0, 0, 0), width=1.5)
+                                except Exception as re:
+                                    logger.debug(f"左綴じ矩形描画エラー: {re}")
+                            else:
+                                self._draw_simple_rectangle(page, x, y, text_width, font_size, rotate_param)
+
+                    except Exception as e:
+                        logger.error(f"P.{page_idx + 1} テキスト挿入エラー: {e}")
+                        # エラー時の最終フォールバック
+                        try:
+                            fallback_text = "Doc " + document_text.replace("資料", "")
+                            page.insert_text((x, y), fallback_text, fontsize=font_size, color=(0, 0, 0))
+                            logger.warning(f"最終フォールバック: {fallback_text}")
+                        except Exception as fallback_error:
+                            logger.error(f"最終フォールバックも失敗: {fallback_error}")
+
+                    # 回転を元に戻す
+                    if original_rotation != 0:
+                        page.set_rotation(original_rotation)
+
+                    logger.info(f"P.{page_idx + 1} に資料NO挿入完了: {document_text}")
+
+                logger.info(f"資料NO挿入完了 ({len(list(page_indices))}ページ): {document_text}")
 
                 # 最適化された保存方式
                 # 一時ファイルに新規保存してから置き換え（フリーズ対策）

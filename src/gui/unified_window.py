@@ -832,12 +832,24 @@ class UnifiedWindow:
 
         # 行4: A3縦ページ左綴じ対応オプション
         row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        row4.pack(fill="x", padx=8, pady=(0, 5))
+        row4.pack(fill="x", padx=8, pady=(0, 3))
 
         self.a3_compat_var = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(
             row4, text="A3縦・A4横ページを左綴じ対応位置（右下）に挿入",
             variable=self.a3_compat_var,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_DOC_PRIMARY
+        ).pack(side="left")
+
+        # 行5: 全ページ挿入オプション
+        row5 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row5.pack(fill="x", padx=8, pady=(0, 5))
+
+        self.insert_all_pages_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            row5, text="全ページに挿入（オフ: 表紙のみ）",
+            variable=self.insert_all_pages_var,
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
             progress_color=CLR_DOC_PRIMARY
         ).pack(side="left")
@@ -1380,13 +1392,15 @@ class UnifiedWindow:
                 preview = f"{prefix}1, {prefix}2, {prefix}3..."
 
             # 確認メッセージ
+            all_pages_str = "全ページ" if self.insert_all_pages_var.get() else "表紙（1ページ目）のみ"
             result = messagebox.askyesno(
                 "挿入の確認",
                 f"以下の内容で挿入を実行しますか？\n\n"
                 f"• 対象ファイル数: {len(self.document_number_files)}個\n"
                 f"• 挿入文字: {prefix}\n"
                 f"• 番号方式: {numbering_type}\n"
-                f"• パターン: {preview}\n\n"
+                f"• パターン: {preview}\n"
+                f"• 挿入ページ: {all_pages_str}\n\n"
                 f"注意: 元ファイルは「元ファイル」フォルダに自動バックアップされ、\n"
                 f"同じファイル名で挿入済みファイルが保存されます。"
             )
@@ -1402,8 +1416,9 @@ class UnifiedWindow:
             # 別スレッドで処理実行
             rename_file = self.rename_file_var.get()
             a3_compat = self.a3_compat_var.get()
+            insert_all_pages = self.insert_all_pages_var.get()
             selected_font = self.doc_font_var.get()
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font))
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages))
             thread.daemon = True
             thread.start()
 
@@ -1415,7 +1430,7 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ") -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False) -> None:
         """挿入実行（別スレッド）"""
         try:
             self.pdf_combiner.set_user_font(selected_font)
@@ -1433,6 +1448,7 @@ class UnifiedWindow:
                     document_prefix=prefix,
                     rename_file=rename_file,
                     a3_portrait_compat=a3_portrait_compat,
+                    insert_all_pages=insert_all_pages,
                     progress_callback=progress_callback
                 )
             else:
@@ -1458,6 +1474,7 @@ class UnifiedWindow:
                     document_prefix=prefix,
                     rename_file=rename_file,
                     a3_portrait_compat=a3_portrait_compat,
+                    insert_all_pages=insert_all_pages,
                     progress_callback=progress_callback
                 )
 
