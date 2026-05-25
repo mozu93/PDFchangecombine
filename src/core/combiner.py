@@ -462,6 +462,7 @@ class PDFCombiner:
                            rename_file: bool = False,
                            a3_portrait_compat: bool = False,
                            insert_all_pages: bool = False,
+                           doc_font_size: int = 20,
                            progress_callback: Optional[callable] = None) -> CombineResult:
         """
         PDFファイルに資料NO挿入（各ファイル個別処理・元ファイル同名保存）
@@ -503,7 +504,7 @@ class PDFCombiner:
                         progress_callback(f"処理中: {Path(pdf_path).name}", progress)
 
                     # 元ファイルのバックアップと資料NO挿入
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -552,6 +553,7 @@ class PDFCombiner:
                                       rename_file: bool = False,
                                       a3_portrait_compat: bool = False,
                                       insert_all_pages: bool = False,
+                                      doc_font_size: int = 20,
                                       progress_callback: Optional[callable] = None) -> CombineResult:
         """
         複数PDFファイルに連番で資料NO挿入
@@ -633,7 +635,7 @@ class PDFCombiner:
                     logger.info(f"ファイル処理開始: {Path(pdf_path).name} → {document_number}")
 
                     # 資料NO挿入実行
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages)
+                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -732,7 +734,7 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False) -> bool:
+    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False, doc_font_size: int = 20) -> bool:
         """
         単一PDFファイルに資料NO挿入（元ファイルバックアップ付き）
 
@@ -740,6 +742,7 @@ class PDFCombiner:
             pdf_path: 対象PDFファイルパス
             document_number: 資料番号
             insert_all_pages: Trueのとき全ページに挿入、FalseのときはP.1のみ
+            doc_font_size: 資料番号のフォントサイズ（20 / 18 / 16）
 
         Returns:
             bool: 処理成功時True
@@ -775,7 +778,7 @@ class PDFCombiner:
                 page_indices = range(len(doc)) if insert_all_pages else [0]
 
                 # フォント設定（全ページ共通）
-                font_size = 20
+                font_size = doc_font_size
                 font_file = self._get_japanese_font_file()
 
                 # テキスト幅計算（日本語テキストベース・全ページ共通）

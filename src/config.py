@@ -8,7 +8,7 @@ from pathlib import Path
 
 # アプリケーション基本設定
 APP_NAME = "PDF変換・結合ツール"
-APP_VERSION = "1.18.0"
+APP_VERSION = "1.19.0"
 WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
 # ウィンドウ設定（450×700縦長レイアウト）

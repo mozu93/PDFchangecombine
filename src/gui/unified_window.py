@@ -799,7 +799,7 @@ class UnifiedWindow:
         )
         self.preview_label.pack(side="left")
 
-        # 行2.5: フォント選択
+        # 行2.5: フォント選択 + サイズ選択
         font_row_doc = ctk.CTkFrame(settings_frame, fg_color="transparent")
         font_row_doc.pack(fill="x", padx=8, pady=(0, 4))
 
@@ -815,6 +815,20 @@ class UnifiedWindow:
             variable=self.doc_font_var,
             values=["メイリオ", "MSゴシック", "MS明朝", "游ゴシック", "BIZ UDPゴシック"],
             width=180,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        ).pack(side="left", padx=(0, 16))
+
+        ctk.CTkLabel(
+            font_row_doc, text="サイズ:",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+            text_color=CLR_DARK_TEXT
+        ).pack(side="left", padx=(0, 6))
+
+        self.doc_font_size_var = ctk.StringVar(value="20")
+        ctk.CTkSegmentedButton(
+            font_row_doc,
+            values=["20", "18", "16"],
+            variable=self.doc_font_size_var,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
         ).pack(side="left")
 
@@ -1418,7 +1432,8 @@ class UnifiedWindow:
             a3_compat = self.a3_compat_var.get()
             insert_all_pages = self.insert_all_pages_var.get()
             selected_font = self.doc_font_var.get()
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages))
+            doc_font_size = int(self.doc_font_size_var.get())
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages, doc_font_size))
             thread.daemon = True
             thread.start()
 
@@ -1430,7 +1445,7 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False) -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False, doc_font_size: int = 20) -> None:
         """挿入実行（別スレッド）"""
         try:
             self.pdf_combiner.set_user_font(selected_font)
@@ -1449,6 +1464,7 @@ class UnifiedWindow:
                     rename_file=rename_file,
                     a3_portrait_compat=a3_portrait_compat,
                     insert_all_pages=insert_all_pages,
+                    doc_font_size=doc_font_size,
                     progress_callback=progress_callback
                 )
             else:
@@ -1475,6 +1491,7 @@ class UnifiedWindow:
                     rename_file=rename_file,
                     a3_portrait_compat=a3_portrait_compat,
                     insert_all_pages=insert_all_pages,
+                    doc_font_size=doc_font_size,
                     progress_callback=progress_callback
                 )
 
