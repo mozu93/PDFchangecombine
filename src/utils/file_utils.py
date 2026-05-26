@@ -164,6 +164,24 @@ class FileScanner:
             result['invalid'].append(str(dir_path))
 
 
+def is_cloud_sync_path(path: str) -> bool:
+    """
+    クラウド同期パス（OneDrive・SharePoint等）かどうかを判定する。
+
+    判定基準:
+    1. パス文字列に 'onedrive' が含まれる（大文字小文字無視）
+    2. 環境変数 OneDrive / OneDriveConsumer / OneDriveCommercial のパス配下
+    """
+    path_lower = path.lower()
+    if 'onedrive' in path_lower:
+        return True
+    for env_var in ('OneDrive', 'OneDriveConsumer', 'OneDriveCommercial'):
+        od_path = os.environ.get(env_var, '')
+        if od_path and path_lower.startswith(od_path.lower()):
+            return True
+    return False
+
+
 class OutputManager:
     """出力管理クラス"""
     

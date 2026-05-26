@@ -14,6 +14,7 @@ import time
 # フォールバック機能は削除し、高品質なCOM APIのみを使用
 
 from ..utils.logger import logger
+from ..utils.file_utils import is_cloud_sync_path
 
 # RPC_E_CALL_REJECTED: COMサーバービジー時のエラーコード
 _RPC_E_CALL_REJECTED = -2147418111
@@ -33,12 +34,12 @@ class OfficeConverter:
         Returns:
             (実際に変換に使うパス, 一時ディレクトリパスまたは空文字)
         """
-        if 'OneDrive' in input_path or 'onedrive' in input_path.lower():
+        if is_cloud_sync_path(input_path):
             try:
                 temp_dir = tempfile.mkdtemp(prefix="pdf_conv_")
                 temp_path = os.path.join(temp_dir, Path(input_path).name)
                 shutil.copy2(input_path, temp_path)
-                logger.info(f"OneDriveファイルを一時フォルダにコピー: {Path(input_path).name} -> {temp_dir}")
+                logger.info(f"クラウド同期ファイルを一時フォルダにコピー: {Path(input_path).name} -> {temp_dir}")
                 return temp_path, temp_dir
             except Exception as e:
                 logger.warning(f"一時コピー失敗、元パスで続行: {e}")

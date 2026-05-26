@@ -4,6 +4,7 @@ PDF変換コアモジュール
 """
 
 import os
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Any
 import asyncio
@@ -11,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from ..utils.logger import logger
-from ..utils.file_utils import FileValidator, OutputManager
+from ..utils.file_utils import FileValidator, OutputManager, is_cloud_sync_path
 from ..config import MAX_CONVERSION_TIME_SECONDS, MAX_CONCURRENT_FILES
 from .office_converter import OfficeConverter
 from .image_converter import ImageConverter
@@ -150,7 +151,15 @@ class PDFConverter:
             if success and file_type != 'pdf':
                 empty_files = []
                 for gen_file in generated_files:
-                    temp_path = gen_file + ".tmp"
+                    # クラウド同期パスの場合はローカル一時フォルダを使用してロック競合を回避
+                    if is_cloud_sync_path(gen_file):
+                        temp_path = os.path.join(
+                            tempfile.gettempdir(),
+                            Path(gen_file).stem + "_repair.tmp"
+                        )
+                        logger.info(f"クラウドパス検出: ローカル一時フォルダ経由で圧縮: {Path(gen_file).name}")
+                    else:
+                        temp_path = gen_file + ".tmp"
                     try:
                         with fitz.open(gen_file) as doc:
                             if doc.page_count == 0:
