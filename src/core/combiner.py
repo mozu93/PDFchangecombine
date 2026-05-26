@@ -10,7 +10,7 @@ import time
 import fitz  # PyMuPDF
 
 from ..utils.logger import logger
-from ..utils.file_utils import FileValidator
+from ..utils.file_utils import FileValidator, OutputManager
 
 
 class CombineResult:
@@ -463,14 +463,16 @@ class PDFCombiner:
                            a3_portrait_compat: bool = False,
                            insert_all_pages: bool = False,
                            doc_font_size: int = 20,
+                           output_dir: str = "",
                            progress_callback: Optional[callable] = None) -> CombineResult:
         """
-        PDFファイルに資料NO挿入（各ファイル個別処理・元ファイル同名保存）
+        PDFファイルに資料NO挿入（各ファイル個別処理・非破壊出力）
 
         Args:
             pdf_paths: 対象PDFファイルパスのリスト
-            output_path: 使用しない（各ファイル同名で保存）
+            output_path: 使用しない（後方互換のために残す）
             document_number: 資料番号（例: "1", "2", "1-1"）
+            output_dir: 出力先ディレクトリ（空文字の場合は元ファイルと同じフォルダ）
             progress_callback: 進捗コールバック関数
 
         Returns:
@@ -503,8 +505,9 @@ class PDFCombiner:
                         progress = (i + 1) / len(valid_files) * 90
                         progress_callback(f"処理中: {Path(pdf_path).name}", progress)
 
-                    # 元ファイルのバックアップと資料NO挿入
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size)
+                    # 資料NO挿入（非破壊・出力先フォルダに新規作成）
+                    effective_output_dir = output_dir if output_dir else str(Path(pdf_path).parent)
+                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -634,8 +637,9 @@ class PDFCombiner:
 
                     logger.info(f"ファイル処理開始: {Path(pdf_path).name} → {document_number}")
 
-                    # 資料NO挿入実行
-                    new_path = self._process_single_pdf_with_backup(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size)
+                    # 資料NO挿入実行（非破壊・出力先フォルダに新規作成）
+                    effective_output_dir = output_dir if output_dir else str(Path(pdf_path).parent)
+                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -734,37 +738,27 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_with_backup(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False, doc_font_size: int = 20) -> bool:
+    def _process_single_pdf_to_dir(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False, doc_font_size: int = 20, output_dir: str = "") -> str:
         """
-        単一PDFファイルに資料NO挿入（元ファイルバックアップ付き）
+        単一PDFファイルに資料NO挿入（非破壊・出力先フォルダに新規作成）
 
         Args:
             pdf_path: 対象PDFファイルパス
             document_number: 資料番号
             insert_all_pages: Trueのとき全ページに挿入、FalseのときはP.1のみ
             doc_font_size: 資料番号のフォントサイズ（20 / 18 / 16）
+            output_dir: 出力先ディレクトリ（空文字の場合は元ファイルと同じフォルダ）
 
         Returns:
-            bool: 処理成功時True
+            str: 出力ファイルパス（成功時）、None（失敗時）
         """
         try:
             pdf_path_obj = Path(pdf_path)
-
-            # 元ファイルフォルダを作成
-            backup_dir = pdf_path_obj.parent / "元ファイル"
-            backup_dir.mkdir(exist_ok=True)
-
-            # 元ファイルをバックアップフォルダに移動
-            backup_path = backup_dir / pdf_path_obj.name
-
-            # 既存のバックアップファイルがあれば削除
-            if backup_path.exists():
-                backup_path.unlink()
-
-            # 元ファイルをバックアップフォルダにコピー
             import shutil
-            shutil.copy2(pdf_path, backup_path)
-            logger.info(f"元ファイルをバックアップ: {backup_path}")
+
+            # 出力先ディレクトリの決定
+            effective_output_dir = output_dir if output_dir else str(pdf_path_obj.parent)
+            Path(effective_output_dir).mkdir(parents=True, exist_ok=True)
 
             # PDFを開いて資料NO挿入
             with fitz.open(pdf_path) as doc:
@@ -949,29 +943,26 @@ class PDFCombiner:
 
                 logger.info(f"資料NO挿入完了 ({len(list(page_indices))}ページ): {document_text}")
 
-                # 最適化された保存方式
-                # 一時ファイルに新規保存してから置き換え（フリーズ対策）
+                # ファイル名の先頭に資料番号を付加（オプション）
+                if rename_file:
+                    fw_number = self._to_fullwidth_number(document_number)
+                    label = f"【{document_prefix}{fw_number}】"
+                    output_filename = label + pdf_path_obj.name
+                else:
+                    output_filename = pdf_path_obj.name
+
+                # 出力先パスを決定（同名ファイルがあれば連番付与）
+                output_file_path = OutputManager.get_unique_output_path(effective_output_dir, output_filename)
+
+                # 一時ファイルに保存してから出力先へ移動（フリーズ対策）
                 temp_path = pdf_path + ".tmp"
                 doc.save(temp_path, garbage=4, deflate=True, clean=True)
 
-            # 元ファイルを一時ファイルで置き換え（with文外で実行）
-            import shutil
-            shutil.move(temp_path, pdf_path)
+            # 出力先に移動（with文外で実行）
+            shutil.move(temp_path, output_file_path)
 
-            # ファイル名の先頭に資料番号を付加（オプション）
-            if rename_file:
-                fw_number = self._to_fullwidth_number(document_number)
-                label = f"【{document_prefix}{fw_number}】"
-                new_name = label + pdf_path_obj.name
-                new_path = pdf_path_obj.parent / new_name
-                if new_path.exists():
-                    new_path.unlink()
-                Path(pdf_path).rename(new_path)
-                logger.info(f"資料NO挿入完了（リネーム）: {new_name}")
-                return str(new_path)
-
-            logger.info(f"資料NO挿入完了: {pdf_path_obj.name}")
-            return pdf_path
+            logger.info(f"資料NO挿入完了: {pdf_path_obj.name} → {output_file_path}")
+            return output_file_path
 
         except Exception as e:
             logger.error(f"単一PDF処理エラー ({pdf_path}): {e}")

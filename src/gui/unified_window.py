@@ -31,7 +31,7 @@ from ..config import (
 )
 from ..utils.logger import logger
 from ..utils.drag_drop import drag_drop_handler
-from ..utils.file_utils import FileScanner
+from ..utils.file_utils import FileScanner, OutputManager
 from ..utils.security import SecurityValidator, InputValidator
 from .draggable_list import DraggableFileList
 from .update_banner import UpdateBanner
@@ -93,6 +93,12 @@ class UnifiedWindow:
         # オプション管理
         self.split_excel_sheets_var = ctk.BooleanVar(value=False)
         self.pagenumber_files: List[str] = []
+
+        # 出力先ディレクトリ（各タブ）
+        self.conversion_output_dir: str = ""
+        self.document_output_dir: str = ""
+        self.combination_output_dir: str = ""
+        self.pagenumber_output_dir: str = ""
 
         # UI作成
         self._create_main_ui()
@@ -313,6 +319,23 @@ class UnifiedWindow:
         )
         self.conversion_count_label.pack(side="right", padx=10, pady=6)
 
+        # ── 出力先フォルダ行 ──
+        conv_out_frame = ctk.CTkFrame(self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
+                                      border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        conv_out_frame.pack(fill="x", padx=15, pady=(0, 4))
+        ctk.CTkLabel(conv_out_frame, text="出力先:",
+                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
+        self.conversion_output_dir_label = ctk.CTkLabel(
+            conv_out_frame, text="（最初のファイルと同じフォルダ）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
+        )
+        self.conversion_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
+        ctk.CTkButton(
+            conv_out_frame, text="📂 変更", command=self._change_conversion_output_dir,
+            height=26, width=80, fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        ).pack(side="right", padx=(4, 8), pady=5)
+
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
         # ステータスラベル（一番下）
@@ -464,7 +487,24 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13), text_color=CLR_GRAY_TEXT
         )
         self.combination_count_label.pack(side="right", padx=10, pady=6)
-        
+
+        # ── 出力先フォルダ行 ──
+        comb_out_frame = ctk.CTkFrame(self.combination_tab, fg_color=CLR_TOOLBAR_BG,
+                                      border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        comb_out_frame.pack(fill="x", padx=15, pady=(0, 4))
+        ctk.CTkLabel(comb_out_frame, text="出力先:",
+                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
+        self.combination_output_dir_label = ctk.CTkLabel(
+            comb_out_frame, text="（最初のファイルと同じフォルダ）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
+        )
+        self.combination_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
+        ctk.CTkButton(
+            comb_out_frame, text="📂 変更", command=self._change_combination_output_dir,
+            height=26, width=80, fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        ).pack(side="right", padx=(4, 8), pady=5)
+
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
         # ステータスラベル（一番下に固定）
@@ -677,6 +717,23 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13), text_color=CLR_GRAY_TEXT
         )
         self.document_count_label.pack(side="right", padx=10, pady=6)
+
+        # ── 出力先フォルダ行 ──
+        doc_out_frame = ctk.CTkFrame(self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
+                                     border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        doc_out_frame.pack(fill="x", padx=15, pady=(0, 4))
+        ctk.CTkLabel(doc_out_frame, text="出力先:",
+                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
+        self.document_output_dir_label = ctk.CTkLabel(
+            doc_out_frame, text="（最初のファイルと同じフォルダ）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
+        )
+        self.document_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
+        ctk.CTkButton(
+            doc_out_frame, text="📂 変更", command=self._change_document_output_dir,
+            height=26, width=80, fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        ).pack(side="right", padx=(4, 8), pady=5)
 
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
@@ -982,6 +1039,10 @@ class UnifiedWindow:
             if new_files:
                 self.conversion_files.extend(new_files)
                 self.conversion_draggable_list.add_files(new_files)
+                # 出力先未設定の場合は最初のファイルの親フォルダを自動設定
+                if not self.conversion_output_dir:
+                    self.conversion_output_dir = str(Path(new_files[0]).parent)
+                    self._update_conversion_output_dir_label()
                 self._update_conversion_display()
                 logger.info(f"変換ファイル追加: {len(new_files)}個")
             else:
@@ -992,7 +1053,7 @@ class UnifiedWindow:
     def _add_combination_files(self, paths: List[str]) -> None:
         """結合ファイル追加（PDF専用）"""
         pdf_files = [p for p in paths if Path(p).suffix.lower() == '.pdf' and Path(p).is_file()]
-        
+
         if pdf_files:
             # 重複を避けるために新しいファイルのみ追加
             new_files = [f for f in pdf_files if f not in self.combination_files]
@@ -1002,6 +1063,11 @@ class UnifiedWindow:
 
                 # 旧式リストも互換性のため更新
                 self.combination_files.extend(new_files)
+
+                # 出力先未設定の場合は最初のファイルの親フォルダを自動設定
+                if not self.combination_output_dir:
+                    self.combination_output_dir = str(Path(new_files[0]).parent)
+                    self._update_combination_output_dir_label()
 
                 self._update_combination_display()
                 logger.info(f"結合ファイル追加: {len(new_files)}個")
@@ -1113,6 +1179,11 @@ class UnifiedWindow:
 
                     # 旧式リストも互換性のため更新
                     self.document_number_files.extend(new_files)
+
+                    # 出力先未設定の場合は最初のファイルの親フォルダを自動設定
+                    if not self.document_output_dir:
+                        self.document_output_dir = str(Path(new_files[0]).parent)
+                        self._update_document_output_dir_label()
 
                     self._update_document_number_display()
                     logger.info(f"資料NO挿入ファイル追加: {len(new_files)}個")
@@ -1407,6 +1478,7 @@ class UnifiedWindow:
 
             # 確認メッセージ
             all_pages_str = "全ページ" if self.insert_all_pages_var.get() else "表紙（1ページ目）のみ"
+            out_dir_disp = self.document_output_dir or "（元ファイルと同じフォルダ）"
             result = messagebox.askyesno(
                 "挿入の確認",
                 f"以下の内容で挿入を実行しますか？\n\n"
@@ -1414,9 +1486,9 @@ class UnifiedWindow:
                 f"• 挿入文字: {prefix}\n"
                 f"• 番号方式: {numbering_type}\n"
                 f"• パターン: {preview}\n"
-                f"• 挿入ページ: {all_pages_str}\n\n"
-                f"注意: 元ファイルは「元ファイル」フォルダに自動バックアップされ、\n"
-                f"同じファイル名で挿入済みファイルが保存されます。"
+                f"• 挿入ページ: {all_pages_str}\n"
+                f"• 出力先: {out_dir_disp}\n\n"
+                f"元ファイルはそのまま残ります。"
             )
 
             if not result:
@@ -1465,6 +1537,7 @@ class UnifiedWindow:
                     a3_portrait_compat=a3_portrait_compat,
                     insert_all_pages=insert_all_pages,
                     doc_font_size=doc_font_size,
+                    output_dir=self.document_output_dir,
                     progress_callback=progress_callback
                 )
             else:
@@ -1483,7 +1556,7 @@ class UnifiedWindow:
 
                 result = self.pdf_combiner.add_sequential_document_numbers(
                     pdf_paths=self.document_number_files.copy(),
-                    output_dir="",
+                    output_dir=self.document_output_dir,
                     numbering_type=internal_type,
                     start_number=start_number,
                     prefix_number=prefix_number,
@@ -1512,7 +1585,6 @@ class UnifiedWindow:
             message = (f"資料NO挿入が完了しました！\n\n"
                        f"• 処理ファイル数: {len(result.processed_files)}個\n"
                        f"• 総ページ数: {result.total_pages}ページ\n"
-                       f"• 元ファイルは「元ファイル」フォルダにバックアップされました\n"
                        f"• 処理時間: {result.processing_time:.1f}秒\n\n"
                        f"各ファイルに資料NOが正しく挿入されました。")
             self.document_status.configure(
@@ -1674,6 +1746,76 @@ class UnifiedWindow:
             logger.error(f"ファイル削除中にエラーが発生: {str(e)}")
             self.combination_status.configure(text="削除中にエラーが発生しました")
     
+    # ════════════════════════════════════════════════════════════
+    # 出力先フォルダ関連メソッド
+    # ════════════════════════════════════════════════════════════
+
+    def _shorten_path(self, path: str, max_len: int = 55) -> str:
+        """パス表示用の短縮"""
+        if len(path) <= max_len:
+            return path
+        return "..." + path[-(max_len - 3):]
+
+    # ── 変換タブ ─────────────────────────────────────────────────
+    def _change_conversion_output_dir(self) -> None:
+        d = fd.askdirectory(title="変換ファイルの出力先フォルダを選択")
+        if d:
+            self.conversion_output_dir = d
+            self._update_conversion_output_dir_label()
+
+    def _update_conversion_output_dir_label(self) -> None:
+        if self.conversion_output_dir:
+            self.conversion_output_dir_label.configure(
+                text=self._shorten_path(self.conversion_output_dir), text_color=CLR_DARK_TEXT)
+        else:
+            self.conversion_output_dir_label.configure(
+                text="（最初のファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+
+    # ── 結合タブ ─────────────────────────────────────────────────
+    def _change_combination_output_dir(self) -> None:
+        d = fd.askdirectory(title="結合ファイルの出力先フォルダを選択")
+        if d:
+            self.combination_output_dir = d
+            self._update_combination_output_dir_label()
+
+    def _update_combination_output_dir_label(self) -> None:
+        if self.combination_output_dir:
+            self.combination_output_dir_label.configure(
+                text=self._shorten_path(self.combination_output_dir), text_color=CLR_DARK_TEXT)
+        else:
+            self.combination_output_dir_label.configure(
+                text="（最初のファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+
+    # ── 資料NO挿入タブ ────────────────────────────────────────────
+    def _change_document_output_dir(self) -> None:
+        d = fd.askdirectory(title="資料NO挿入ファイルの出力先フォルダを選択")
+        if d:
+            self.document_output_dir = d
+            self._update_document_output_dir_label()
+
+    def _update_document_output_dir_label(self) -> None:
+        if self.document_output_dir:
+            self.document_output_dir_label.configure(
+                text=self._shorten_path(self.document_output_dir), text_color=CLR_DARK_TEXT)
+        else:
+            self.document_output_dir_label.configure(
+                text="（最初のファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+
+    # ── ページ番号挿入タブ ─────────────────────────────────────────
+    def _change_pagenumber_output_dir(self) -> None:
+        d = fd.askdirectory(title="ページ番号挿入ファイルの出力先フォルダを選択")
+        if d:
+            self.pagenumber_output_dir = d
+            self._update_pagenumber_output_dir_label()
+
+    def _update_pagenumber_output_dir_label(self) -> None:
+        if self.pagenumber_output_dir:
+            self.pagenumber_output_dir_label.configure(
+                text=self._shorten_path(self.pagenumber_output_dir), text_color=CLR_DARK_TEXT)
+        else:
+            self.pagenumber_output_dir_label.configure(
+                text="（元ファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+
     def _delete_selected_conversion(self) -> None:
         """選択中の変換ファイルを削除"""
         selected = self.conversion_draggable_list.get_selected_files()
@@ -1730,7 +1872,7 @@ class UnifiedWindow:
                 
                 # 単一ファイル変換（順次処理）
                 split_sheets = self.split_excel_sheets_var.get()
-                result = self.pdf_converter._convert_single_file(file_path, split_sheets)
+                result = self.pdf_converter._convert_single_file(file_path, split_sheets, self.conversion_output_dir)
                 results.append(result)
                 
                 # 完了時の進捗更新
@@ -1800,19 +1942,18 @@ class UnifiedWindow:
         self.conversion_convert_btn.configure(state="normal")
     
     def _start_combination(self) -> None:
-        """PDF結合開始""" 
+        """PDF結合開始"""
         if not self.combination_files:
             return
 
-        # 保存先選択
-        output_path = fd.asksaveasfilename(
-            title="結合PDFの保存先を選択",
-            filetypes=[("PDFファイル", "*.pdf")],
-            defaultextension=".pdf"
-        )
+        # 出力先フォルダが未設定の場合は最初のファイルの親フォルダを使用
+        out_dir = self.combination_output_dir or str(Path(self.combination_files[0]).parent)
 
-        if not output_path:
-            return
+        # タイムスタンプ付きファイル名を自動生成
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"結合_{timestamp}.pdf"
+        output_path = OutputManager.get_unique_output_path(out_dir, filename)
 
         # UIを無効化
         self.combination_combine_btn.configure(state="disabled")
@@ -1983,6 +2124,23 @@ class UnifiedWindow:
         )
         self.pn_clear_btn.pack(side="left", padx=(0, 4), pady=6)
 
+        # ── 出力先フォルダ行 ──
+        pn_out_frame = ctk.CTkFrame(self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
+                                    border_width=1, border_color=CLR_BORDER, corner_radius=6)
+        pn_out_frame.pack(fill="x", padx=15, pady=(0, 4))
+        ctk.CTkLabel(pn_out_frame, text="出力先:",
+                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
+        self.pagenumber_output_dir_label = ctk.CTkLabel(
+            pn_out_frame, text="（元ファイルと同じフォルダ）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
+        )
+        self.pagenumber_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
+        ctk.CTkButton(
+            pn_out_frame, text="📂 変更", command=self._change_pagenumber_output_dir,
+            height=26, width=80, fg_color=CLR_PN_PRIMARY, hover_color=CLR_PN_HOVER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        ).pack(side="right", padx=(4, 8), pady=5)
+
         # ── ファイル選択エリア ──
         self.pn_drop_frame = ctk.CTkFrame(
             self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
@@ -2145,6 +2303,10 @@ class UnifiedWindow:
         self.pn_execute_btn.configure(state="normal")
         self.pn_preview_btn.configure(state="normal")
         self.pn_status.configure(text=f"選択済み: {name}")
+        # 出力先未設定の場合は元ファイルの親フォルダを自動設定
+        if not self.pagenumber_output_dir:
+            self.pagenumber_output_dir = str(Path(path).parent)
+            self._update_pagenumber_output_dir_label()
 
     def _clear_pagenumber_file(self) -> None:
         self.pagenumber_files = []
@@ -2169,14 +2331,15 @@ class UnifiedWindow:
             return
 
         pdf_path = self.pagenumber_files[0]
+        out_dir_disp = self.pagenumber_output_dir or str(Path(pdf_path).parent)
         confirmed = messagebox.askyesno(
             "ページ番号挿入の確認",
             f"以下の内容でページ番号を挿入しますか？\n\n"
             f"• 対象ファイル: {Path(pdf_path).name}\n"
             f"• 開始ページ: {start_page}ページ目から\n"
-            f"• 開始番号: {start_number}\n\n"
-            f"注意: 元ファイルは「元ファイル」フォルダに自動バックアップされ、\n"
-            f"同じファイル名で挿入済みファイルが保存されます。"
+            f"• 開始番号: {start_number}\n"
+            f"• 出力先: {out_dir_disp}\n\n"
+            f"元ファイルはそのまま残ります。"
         )
         if not confirmed:
             return
@@ -2205,8 +2368,8 @@ class UnifiedWindow:
 
             pdf_path_obj = Path(pdf_path)
 
-            # 同ディレクトリに一時ファイルを作成
-            fd_tmp, tmp_path = tempfile.mkstemp(suffix=".pdf", dir=pdf_path_obj.parent)
+            # 一時ファイルを tempdir に作成（クラウドパス対策）
+            fd_tmp, tmp_path = tempfile.mkstemp(suffix=".pdf")
             os.close(fd_tmp)
 
             result = self.pdf_combiner.combine_pdfs(
@@ -2221,17 +2384,14 @@ class UnifiedWindow:
             )
 
             if result.success:
-                # 元ファイルをバックアップ
-                backup_dir = pdf_path_obj.parent / "元ファイル"
-                backup_dir.mkdir(exist_ok=True)
-                backup_path = backup_dir / pdf_path_obj.name
-                if backup_path.exists():
-                    backup_path.unlink()
-                shutil.copy2(pdf_path, backup_path)
-                # 一時ファイルで元ファイルを上書き
-                shutil.move(tmp_path, pdf_path)
+                # 出力先ディレクトリを決定（未設定なら元ファイルと同じフォルダ）
+                effective_out_dir = self.pagenumber_output_dir or str(pdf_path_obj.parent)
+                Path(effective_out_dir).mkdir(parents=True, exist_ok=True)
+                output_path = OutputManager.get_unique_output_path(effective_out_dir, pdf_path_obj.name)
+                # 一時ファイルを出力先へ移動（元ファイルは上書きしない）
+                shutil.move(tmp_path, output_path)
                 tmp_path = None
-                result.output_path = pdf_path
+                result.output_path = output_path
             else:
                 try:
                     Path(tmp_path).unlink()
@@ -2262,8 +2422,7 @@ class UnifiedWindow:
             msg = (f"ページ番号挿入が完了しました！\n\n"
                    f"• 総ページ数: {result.total_pages}ページ\n"
                    f"• 出力ファイル: {Path(result.output_path).name}\n"
-                   f"• 処理時間: {result.processing_time:.1f}秒\n\n"
-                   f"元ファイルは「元ファイル」フォルダに保存されました。")
+                   f"• 処理時間: {result.processing_time:.1f}秒")
             self.pn_status.configure(text=f"完了: {result.total_pages}ページ")
             self._show_and_open_results("ページ番号挿入完了", msg, [result.output_path])
             self._clear_pagenumber_file()

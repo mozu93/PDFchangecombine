@@ -42,30 +42,31 @@ class PDFConverter:
         
         logger.info("PDFコンバーター初期化完了")
     
-    async def convert_files_async(self, file_paths: List[str], split_sheets: bool = False) -> List[ConversionResult]:
+    async def convert_files_async(self, file_paths: List[str], split_sheets: bool = False, output_dir: str = "") -> List[ConversionResult]:
         """
         複数ファイルの非同期変換（要件定義書 F-103）
-        
+
         Args:
             file_paths: 変換対象ファイルパスのリスト
             split_sheets: Excelシートを分割するかどうか
-            
+            output_dir: 出力先ディレクトリ（空文字の場合は各ファイルと同じフォルダ内の「変換済」へ）
+
         Returns:
             List[ConversionResult]: 変換結果のリスト
         """
         if len(file_paths) > MAX_CONCURRENT_FILES:
             logger.warning(f"同時変換ファイル数が上限を超過: {len(file_paths)}/{MAX_CONCURRENT_FILES}")
-        
+
         start_time = time.time()
         results = []
-        
+
         # セマフォで同時実行数制御
         semaphore = asyncio.Semaphore(4)
-        
+
         # 非同期タスクを作成
         tasks = []
         for file_path in file_paths:
-            task = self._convert_single_file_with_semaphore(semaphore, file_path, split_sheets)
+            task = self._convert_single_file_with_semaphore(semaphore, file_path, split_sheets, output_dir)
             tasks.append(task)
         
         # 全てのタスクを実行
@@ -99,34 +100,39 @@ class PDFConverter:
         
         return final_results
     
-    async def _convert_single_file_with_semaphore(self, semaphore: asyncio.Semaphore, 
-                                                 file_path: str, split_sheets: bool = False) -> ConversionResult:
+    async def _convert_single_file_with_semaphore(self, semaphore: asyncio.Semaphore,
+                                                 file_path: str, split_sheets: bool = False,
+                                                 output_dir: str = "") -> ConversionResult:
         """セマフォ付き単一ファイル変換"""
         async with semaphore:
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(self.executor, self._convert_single_file, file_path, split_sheets)
-    
-    def _convert_single_file(self, file_path: str, split_sheets: bool = False) -> ConversionResult:
+            return await loop.run_in_executor(
+                self.executor, self._convert_single_file, file_path, split_sheets, output_dir
+            )
+
+    def _convert_single_file(self, file_path: str, split_sheets: bool = False, output_dir: str = "") -> ConversionResult:
         """
         単一ファイルの変換処理（要件定義書 F-103）
-        
+
         Args:
             file_path: 変換対象ファイルパス
-            
+            split_sheets: Excelシートを分割するかどうか
+            output_dir: 出力先ディレクトリ（空文字の場合は「変換済」フォルダ）
+
         Returns:
             ConversionResult: 変換結果
         """
         start_time = time.time()
         result = ConversionResult(source_path=file_path)
-        
+
         try:
             # ファイル妥当性チェック
             if not self._validate_file(file_path):
                 result.error_message = "ファイル妥当性チェック失敗"
                 return result
-            
-            # 出力ファイルパス生成（要件定義書 F-104）
-            output_path = OutputManager.get_output_file_path(file_path)
+
+            # 出力ファイルパス生成
+            output_path = OutputManager.get_output_file_path(file_path, output_dir)
             
             # ファイル種別に応じて変換実行
             file_type = FileValidator.get_file_type(file_path)
