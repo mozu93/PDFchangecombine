@@ -148,14 +148,35 @@ class PDFConverter:
             success = bool(generated_files)
 
             if success and file_type != 'pdf':
+                empty_files = []
                 for gen_file in generated_files:
+                    temp_path = gen_file + ".tmp"
                     try:
-                        logger.info(f"PDF修復処理開始: {gen_file}")
                         with fitz.open(gen_file) as doc:
-                            doc.save(gen_file, garbage=4, deflate=True, clean=True)
+                            if doc.page_count == 0:
+                                logger.warning(f"空のPDF（印刷対象なし）のためスキップ: {Path(gen_file).name}")
+                                empty_files.append(gen_file)
+                                continue
+                            logger.info(f"PDF修復処理開始: {gen_file}")
+                            doc.save(temp_path, garbage=4, deflate=True, clean=True)
+                        os.replace(temp_path, gen_file)
                         logger.info(f"PDF修復処理完了: {gen_file}")
                     except Exception as e:
                         logger.warning(f"PDF修復処理に失敗: {gen_file} - {e}")
+                        if os.path.exists(temp_path):
+                            try:
+                                os.remove(temp_path)
+                            except Exception:
+                                pass
+                # 空のPDFをファイルリストと出力から除外
+                for f in empty_files:
+                    try:
+                        os.remove(f)
+                    except Exception:
+                        pass
+                for f in empty_files:
+                    if f in generated_files:
+                        generated_files.remove(f)
             
             result.success = success
             
