@@ -1526,10 +1526,7 @@ class UnifiedWindow:
                 if processed:
                     self._open_folder(str(Path(processed[0]).parent))
 
-            if len(processed) >= 2:
-                self._show_combination_offer(processed, on_no_callback=open_folder)
-            else:
-                open_folder()
+            open_folder()
         else:
             message = f"資料NO挿入に失敗しました。\n\nエラー: {result.error_message}"
             self.document_status.configure(text=f"資料NO挿入失敗: {result.error_message}")
@@ -1787,11 +1784,7 @@ class UnifiedWindow:
                 if all_successful_paths:
                     self._open_folder(str(Path(all_successful_paths[0]).parent))
 
-            # 資料NO挿入提案ダイアログ
-            if len(all_successful_paths) >= 1:
-                self._show_document_number_offer(all_successful_paths, on_no_callback=open_folder_callback)
-            else:
-                open_folder_callback()
+            open_folder_callback()
 
             messagebox.showinfo("変換完了", message)
 
@@ -1805,90 +1798,6 @@ class UnifiedWindow:
 
         # UI有効化
         self.conversion_convert_btn.configure(state="normal")
-    
-    def _show_document_number_offer(self, pdf_files: List[str], on_no_callback=None) -> None:
-        """資料NO挿入提案ダイアログ"""
-        dialog = ctk.CTkToplevel(self.root)
-        dialog.title("資料NO挿入")
-        dialog.geometry("350x150")
-        dialog.transient(self.root)
-        dialog.grab_set()
-
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 175
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
-        dialog.geometry(f"350x150+{x}+{y}")
-
-        msg_label = ctk.CTkLabel(
-            dialog,
-            text=f"変換したPDFファイル({len(pdf_files)}個)に\n資料NOを挿入しますか？",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        )
-        msg_label.pack(pady=20)
-
-        btn_frame = ctk.CTkFrame(dialog)
-        btn_frame.pack(pady=10)
-
-        def on_yes():
-            dialog.destroy()
-            self._clear_document_number_files()
-            if len(pdf_files) > 1:
-                self.numbering_type_var.set("連番")
-                self._on_numbering_type_changed("連番")
-            self._add_document_number_files(pdf_files)
-            self._switch_tab("資料NO挿入")
-
-        def on_no():
-            dialog.destroy()
-            if on_no_callback:
-                on_no_callback()
-
-        yes_btn = ctk.CTkButton(btn_frame, text="はい", command=on_yes, width=80)
-        yes_btn.pack(side="left", padx=10)
-
-        no_btn = ctk.CTkButton(btn_frame, text="いいえ", command=on_no, width=80)
-        no_btn.pack(side="left", padx=10)
-
-    def _show_combination_offer(self, pdf_files: List[str], on_no_callback=None) -> None:
-        """結合提案ダイアログ"""
-        dialog = ctk.CTkToplevel(self.root)
-        dialog.title("PDF結合")
-        dialog.geometry("350x150")
-        dialog.transient(self.root)
-        dialog.grab_set()
-
-        # 中央配置
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 175
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
-        dialog.geometry(f"350x150+{x}+{y}")
-
-        # メッセージ
-        msg_label = ctk.CTkLabel(
-            dialog,
-            text=f"PDFファイル({len(pdf_files)}個)を\n結合しますか？",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        )
-        msg_label.pack(pady=20)
-
-        # ボタンフレーム
-        btn_frame = ctk.CTkFrame(dialog)
-        btn_frame.pack(pady=10)
-
-        def on_yes():
-            dialog.destroy()
-            self._clear_combination_files()
-            self._add_combination_files(pdf_files)
-            self._switch_tab("PDF結合")
-
-        def on_no():
-            dialog.destroy()
-            if on_no_callback:
-                on_no_callback()
-
-        yes_btn = ctk.CTkButton(btn_frame, text="はい", command=on_yes, width=80)
-        yes_btn.pack(side="left", padx=10)
-
-        no_btn = ctk.CTkButton(btn_frame, text="いいえ", command=on_no, width=80)
-        no_btn.pack(side="left", padx=10)
     
     def _start_combination(self) -> None:
         """PDF結合開始""" 
