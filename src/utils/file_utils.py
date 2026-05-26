@@ -164,21 +164,82 @@ class FileScanner:
             result['invalid'].append(str(dir_path))
 
 
+def _get_onedrive_sync_roots() -> list:
+    """
+    レジストリからOneDrive・SharePoint同期ルートパス一覧を取得する（Windows限定）。
+    HKCU\SOFTWARE\Microsoft\OneDrive\Accounts 配下の全アカウントを走査する。
+    """
+    sync_roots = []
+    if os.name != 'nt':
+        return sync_roots
+    try:
+        import winreg
+        accounts_key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"SOFTWARE\Microsoft\OneDrive\Accounts"
+        )
+        i = 0
+        while True:
+            try:
+                account_name = winreg.EnumKey(accounts_key, i)
+                account_key = winreg.OpenKey(accounts_key, account_name)
+                # UserFolder: OneDrive / OneDrive for Business のルートパス
+                try:
+                    user_folder, _ = winreg.QueryValueEx(account_key, "UserFolder")
+                    if user_folder:
+                        sync_roots.append(user_folder)
+                except FileNotFoundError:
+                    pass
+                # ScopeIdToMountPointPathCache: SharePointサイトの同期パス
+                try:
+                    cache_key = winreg.OpenKey(
+                        account_key, "ScopeIdToMountPointPathCache"
+                    )
+                    j = 0
+                    while True:
+                        try:
+                            _, mount_path, _ = winreg.EnumValue(cache_key, j)
+                            if mount_path:
+                                sync_roots.append(mount_path)
+                            j += 1
+                        except OSError:
+                            break
+                except FileNotFoundError:
+                    pass
+                i += 1
+            except OSError:
+                break
+    except Exception:
+        pass
+    return sync_roots
+
+
 def is_cloud_sync_path(path: str) -> bool:
     """
     クラウド同期パス（OneDrive・SharePoint等）かどうかを判定する。
 
-    判定基準:
+    判定基準（順に確認）:
     1. パス文字列に 'onedrive' が含まれる（大文字小文字無視）
     2. 環境変数 OneDrive / OneDriveConsumer / OneDriveCommercial のパス配下
+    3. レジストリに登録されたOneDrive・SharePoint同期ルート配下（組織名不問）
     """
     path_lower = path.lower()
+
+    # 1. 文字列チェック
     if 'onedrive' in path_lower:
         return True
+
+    # 2. 環境変数チェック
     for env_var in ('OneDrive', 'OneDriveConsumer', 'OneDriveCommercial'):
         od_path = os.environ.get(env_var, '')
         if od_path and path_lower.startswith(od_path.lower()):
             return True
+
+    # 3. レジストリから取得した同期ルートと照合
+    for sync_root in _get_onedrive_sync_roots():
+        if sync_root and path_lower.startswith(sync_root.lower()):
+            return True
+
     return False
 
 
