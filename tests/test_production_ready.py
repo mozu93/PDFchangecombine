@@ -98,17 +98,25 @@ class TestSecurityFeatures(unittest.TestCase):
                 self.assertFalse(InputValidator.validate_document_number(number))
 
     def test_platform_dependent_char_rejection(self):
-        """機種依存文字（①、Ⅰ、㎡など）を含む資料番号・プレフィックスの拒否テスト"""
+        """機種依存文字（①、Ⅰ、㎡など）はBIZ UDPゴシック選択時のみ拒否されるテスト"""
         bad_numbers = ["①", "資料①", "Ⅰ", "1-①", "㎡"]
+
+        # BIZ UDPゴシックはグリフ不足のため拒否
         for number in bad_numbers:
-            with self.subTest(number=number):
-                self.assertFalse(InputValidator.validate_document_number(number))
-                self.assertFalse(InputValidator.validate_prefix_text(number))
+            with self.subTest(number=number, font="BIZ UDPゴシック"):
+                self.assertFalse(InputValidator.validate_document_number(number, font_name="BIZ UDPゴシック"))
+                self.assertFalse(InputValidator.validate_prefix_text(number, font_name="BIZ UDPゴシック"))
+
+        # 他のフォント（グリフを持つ）では許可
+        for number in bad_numbers:
+            for font in ["メイリオ", "MSゴシック", "MS明朝", "游ゴシック", None]:
+                with self.subTest(number=number, font=font):
+                    self.assertTrue(InputValidator.validate_document_number(number, font_name=font))
 
         good_numbers = ["1", "I", "1-1"]
         for number in good_numbers:
             with self.subTest(number=number):
-                self.assertTrue(InputValidator.validate_document_number(number))
+                self.assertTrue(InputValidator.validate_document_number(number, font_name="BIZ UDPゴシック"))
 
     def test_file_size_limits(self):
         """ファイルサイズ制限テスト"""
