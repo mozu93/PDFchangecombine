@@ -884,7 +884,7 @@ class UnifiedWindow:
         self.doc_font_size_var = ctk.StringVar(value="20")
         ctk.CTkSegmentedButton(
             font_row_doc,
-            values=["20", "18", "16"],
+            values=["20", "18", "16", "14", "12"],
             variable=self.doc_font_size_var,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
         ).pack(side="left")
@@ -1436,13 +1436,15 @@ class UnifiedWindow:
                 self.document_status.configure(text="番号を入力してください")
                 return
 
+            selected_font = self.doc_font_var.get()
+
             # 入力値のセキュリティ検証（番号なし以外）
-            if number_value and not InputValidator.validate_document_number(number_value):
+            if number_value and not InputValidator.validate_document_number(number_value, font_name=selected_font):
                 error_handler.handle_error(
                     ValueError("無効な資料番号"),
                     ErrorSeverity.WARNING,
                     "入力検証",
-                    "資料番号に無効な文字が含まれています。英数字、ひらがな、カタカナ、漢字のみ使用してください。"
+                    f"資料番号に無効な文字が含まれています。①やⅠ、㎡などの機種依存文字は「{selected_font}」では文字化けするため使用できません。半角数字や記号（-など）、ひらがな、カタカナ、漢字を使用するか、他のフォントを選択してください。"
                 )
                 return
 
@@ -1453,12 +1455,12 @@ class UnifiedWindow:
 
             # 「その他」選択時はプレフィックス文字列を検証
             if self.prefix_var.get() == "その他":
-                if not InputValidator.validate_prefix_text(prefix):
+                if not InputValidator.validate_prefix_text(prefix, font_name=selected_font):
                     error_handler.handle_error(
                         ValueError("無効なプレフィックス"),
                         ErrorSeverity.WARNING,
                         "入力検証",
-                        "入力した文字に使用できない文字が含まれています。記号（< > \" ' & ; ( ) { }）は使用不可です。10文字以内で入力してください。"
+                        f"入力した文字に使用できない文字が含まれています。記号（< > \" ' & ; ( ) {{ }}）や①、Ⅰ、㎡などの機種依存文字は「{selected_font}」では文字化けするため使用できません。10文字以内で入力するか、他のフォントを選択してください。"
                     )
                     return
             numbering_type = self.numbering_type_var.get()
