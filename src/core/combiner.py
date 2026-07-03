@@ -243,7 +243,7 @@ class PDFCombiner:
                         # 90度回転: 右側中央が下部になる
                         x = page_width - 28.35  # 右端から10mm
                         y = (page_height - text_width) / 2  # 垂直中央
-                        rotate_param = -90
+                        rotate_param = 90
                     elif original_rotation == 180:
                         # 180度回転: 上部中央が下部になる
                         x = (page_width - text_width) / 2  # 水平中央
