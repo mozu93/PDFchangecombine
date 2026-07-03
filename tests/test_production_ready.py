@@ -97,6 +97,19 @@ class TestSecurityFeatures(unittest.TestCase):
             with self.subTest(number=number):
                 self.assertFalse(InputValidator.validate_document_number(number))
 
+    def test_platform_dependent_char_rejection(self):
+        """機種依存文字（①、Ⅰ、㎡など）を含む資料番号・プレフィックスの拒否テスト"""
+        bad_numbers = ["①", "資料①", "Ⅰ", "1-①", "㎡"]
+        for number in bad_numbers:
+            with self.subTest(number=number):
+                self.assertFalse(InputValidator.validate_document_number(number))
+                self.assertFalse(InputValidator.validate_prefix_text(number))
+
+        good_numbers = ["1", "I", "1-1"]
+        for number in good_numbers:
+            with self.subTest(number=number):
+                self.assertTrue(InputValidator.validate_document_number(number))
+
     def test_file_size_limits(self):
         """ファイルサイズ制限テスト"""
         # 大きなファイルを模擬

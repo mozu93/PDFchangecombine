@@ -191,6 +191,32 @@ class SecurityValidator:
 class InputValidator:
     """入力値検証クラス"""
 
+    # ①やⅠ、㎡など「機種依存文字」の範囲。
+    # 資料NO挿入で使用するPDF埋め込みフォント（メイリオ/MSゴシック等）に
+    # グリフが存在しない場合、PDF上で文字化け（notdef表示）やテキスト情報の破損を起こすため
+    # 入力時点で弾く。
+    _PLATFORM_DEPENDENT_CHAR_RANGES = [
+        (0x2160, 0x217F),  # ローマ数字 Ⅰ-Ⅻ, ⅰ-ⅻ
+        (0x2460, 0x24FF),  # 丸数字・丸英字 ①-⑳, Ⓐ-Ⓩ など
+        (0x2776, 0x2793),  # 装飾丸数字
+        (0x3220, 0x3243),  # 括弧付き漢字 (株)など
+        (0x3251, 0x325F),  # 丸数字 21-32
+        (0x32B1, 0x32BF),  # 丸数字 36-50
+        (0x3300, 0x33FF),  # 単位記号など（㎡ ㌔ ㍑ など）
+        (0x2116, 0x2116),  # №
+        (0x2121, 0x2121),  # ℡
+    ]
+
+    @staticmethod
+    def find_platform_dependent_char(text: str) -> Optional[str]:
+        """機種依存文字が含まれていれば最初の1文字を返す（無ければNone）"""
+        for ch in text:
+            code = ord(ch)
+            for lo, hi in InputValidator._PLATFORM_DEPENDENT_CHAR_RANGES:
+                if lo <= code <= hi:
+                    return ch
+        return None
+
     @staticmethod
     def validate_document_number(document_number: str) -> bool:
         """
@@ -216,6 +242,12 @@ class InputValidator:
             logger.warning(f"危険な文字が含まれています: {document_number}")
             return False
 
+        # 機種依存文字（①、Ⅰ、㎡など）はPDF出力時に文字化けするため禁止
+        bad_char = InputValidator.find_platform_dependent_char(document_number)
+        if bad_char:
+            logger.warning(f"機種依存文字が含まれています: {bad_char!r} in {document_number}")
+            return False
+
         return True
 
     @staticmethod
@@ -230,6 +262,13 @@ class InputValidator:
         if any(char in prefix for char in dangerous_chars):
             logger.warning(f"プレフィックスに危険な文字が含まれています: {prefix}")
             return False
+
+        # 機種依存文字（①、Ⅰ、㎡など）はPDF出力時に文字化けするため禁止
+        bad_char = InputValidator.find_platform_dependent_char(prefix)
+        if bad_char:
+            logger.warning(f"プレフィックスに機種依存文字が含まれています: {bad_char!r} in {prefix}")
+            return False
+
         return True
 
     @staticmethod
