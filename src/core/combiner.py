@@ -750,7 +750,7 @@ class PDFCombiner:
             pdf_path: 対象PDFファイルパス
             document_number: 資料番号
             insert_all_pages: Trueのとき全ページに挿入、FalseのときはP.1のみ
-            doc_font_size: 資料番号のフォントサイズ（20 / 18 / 16）
+            doc_font_size: 資料番号のフォントサイズ（20 / 18 / 16 / 14 / 12）
             output_dir: 出力先ディレクトリ（空文字の場合は元ファイルと同じフォルダ）
 
         Returns:

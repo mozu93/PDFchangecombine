@@ -884,7 +884,7 @@ class UnifiedWindow:
         self.doc_font_size_var = ctk.StringVar(value="20")
         ctk.CTkSegmentedButton(
             font_row_doc,
-            values=["20", "18", "16"],
+            values=["20", "18", "16", "14", "12"],
             variable=self.doc_font_size_var,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
         ).pack(side="left")
