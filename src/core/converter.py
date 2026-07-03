@@ -194,8 +194,9 @@ class PDFConverter:
                         generated_files.remove(f)
             
             result.success = success
-            
+
             if success:
+                OutputManager.archive_source_file(file_path)
                 logger.log_file_operation("変換", file_path, True)
             else:
                 result.error_message = "変換処理が失敗しました"

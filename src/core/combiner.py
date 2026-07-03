@@ -316,6 +316,10 @@ class PDFCombiner:
             result.success = True
             result.processed_files = processed_files
 
+            # 元ファイルを「変換元」フォルダへ退避
+            for processed_path in processed_files:
+                OutputManager.archive_source_file(processed_path)
+
             # 進捗完了報告
             if progress_callback:
                 progress_callback("結合完了", 100)
@@ -960,6 +964,9 @@ class PDFCombiner:
 
             # 出力先に移動（with文外で実行）
             shutil.move(temp_path, output_file_path)
+
+            # 元ファイルを「変換元」フォルダへ退避
+            OutputManager.archive_source_file(pdf_path)
 
             logger.info(f"資料NO挿入完了: {pdf_path_obj.name} → {output_file_path}")
             return output_file_path

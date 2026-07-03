@@ -8,7 +8,7 @@ from pathlib import Path
 
 # アプリケーション基本設定
 APP_NAME = "PDF変換・結合ツール"
-APP_VERSION = "1.20.1"
+APP_VERSION = "1.21.0"
 WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
 # ウィンドウ設定（450×700縦長レイアウト）
@@ -39,6 +39,9 @@ ALL_SUPPORTED_EXTENSIONS = (
 
 # 出力設定 (要件定義書 F-104)
 OUTPUT_FOLDER_NAME = "変換済"
+
+# 処理済みの元ファイル退避先フォルダ名（元ファイルの散乱防止）
+SOURCE_ARCHIVE_FOLDER_NAME = "変換元"
 
 # ログ設定 (要件定義書 5.2)
 LOG_RETENTION_DAYS = 30
@@ -82,8 +85,6 @@ MEMORY_WARNING_THRESHOLD_MB = 500      # メモリ警告閾値
 
 # UI設定
 SHOW_DETAILED_ERRORS = not PRODUCTION_MODE  # 詳細エラー表示（開発時のみ）
-AUTO_BACKUP_ENABLED = True                  # 自動バックアップ機能
-BACKUP_FOLDER_NAME = "元ファイル"            # バックアップフォルダ名
 
 # 監視・ログ設定
 STRUCTURED_LOGGING = True              # 構造化ログの有効/無効
