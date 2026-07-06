@@ -849,15 +849,17 @@ class PDFCombiner:
                             logger.info(f"{original_rotation}度回転ページでReportLabオーバーレイを使用")
 
                             # 回転角度別の座標調整（右上角配置）
+                            # 0度状態（未回転）の座標系で、最終的な表示回転を適用した後に
+                            # 右上角へ来る位置を狙って算出する
                             if original_rotation == 90:
-                                # 90度回転: テキストを右上角に横向き配置
-                                overlay_x = page_width - margin - text_width
-                                overlay_y = page_height - margin - font_size
+                                # 90度回転: 0度状態の左上角が表示上の右上角になる
+                                overlay_x = margin + font_size
+                                overlay_y = margin + text_width
                                 logger.info(f"90度回転ページ用オーバーレイ座標（右上角横向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
                             elif original_rotation == 180:
-                                # 180度回転: テキストを右上角に逆向き配置
-                                overlay_x = page_width - margin - text_width
-                                overlay_y = margin + font_size
+                                # 180度回転: 0度状態の左下角が表示上の右上角になる
+                                overlay_x = margin + text_width
+                                overlay_y = page_height - margin - font_size
                                 logger.info(f"180度回転ページ用オーバーレイ座標（右上角逆向き）: x={overlay_x:.1f}, y={overlay_y:.1f}")
                             elif original_rotation == 270:
                                 # 270度回転: テキストを右上角に縦向き配置
@@ -1066,11 +1068,17 @@ class PDFCombiner:
 
             # ページ回転に応じたテキスト描画
             if rotate_param == 90:
-                # 90度回転ページの場合、通常横向きテキスト
+                # 90度回転ページの場合、表示時に90度回転されて正立するようテキストを90度回転させて描画
                 draw_x = x
                 draw_y = page_height - y  # Y座標を反転
-                c.drawString(draw_x, draw_y, document_text)
-                logger.info(f"90度回転ページ: ReportLab座標({draw_x:.1f}, {draw_y:.1f})に横向きテキスト描画")
+
+                c.saveState()
+                c.translate(draw_x, draw_y)
+                c.rotate(90)
+                c.drawString(0, 0, document_text)
+                c.restoreState()
+
+                logger.info(f"90度回転ページ: ReportLab座標({draw_x:.1f}, {draw_y:.1f})に90度回転テキスト描画")
             elif rotate_param == 180:
                 # 180度回転ページの場合、テキストを180度回転
                 draw_x = x
@@ -1212,15 +1220,13 @@ class PDFCombiner:
                 rect = fitz.Rect(x - margin, y - text_height - margin,
                                x + text_width + margin, y + margin)
             elif rotate_param == 90:
-                # 90度回転：横向きテキスト用
-                x_adjust = 17  # 位置調整
-                rect = fitz.Rect(x - margin + x_adjust, y - text_height - margin,
-                               x + text_width + margin + x_adjust, y + margin)
+                # 90度回転：縦向きテキスト用（幅と高さを交換）
+                rect = fitz.Rect(x - font_size - margin, y - text_width - margin,
+                               x + margin, y + margin)
             elif rotate_param == 180:
                 # 180度回転：逆向きテキスト用
-                x_adjust = 17  # 位置調整
-                rect = fitz.Rect(x - text_width - margin + x_adjust, y - margin,
-                               x + margin + x_adjust, y + text_height + margin)
+                rect = fitz.Rect(x - text_width - margin, y - margin,
+                               x + margin, y + text_height + margin)
             elif rotate_param == 270:
                 # 270度回転：縦向きテキスト用（幅と高さを交換）
                 x_adjust = 17  # 位置調整
