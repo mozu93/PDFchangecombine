@@ -45,7 +45,8 @@
       "Bash(iconv -f CP932 -t UTF-8 /tmp/outdir_debug.log)",
       "Bash(iconv -f CP932 -t UTF-8 /tmp/outdir_debug2.log)",
       "Bash(iconv -f CP932 -t UTF-8 /tmp/outdir_debug3.log)",
-      "Bash(iconv -f CP932 -t UTF-8 /tmp/app_final2.log)"
+      "Bash(iconv -f CP932 -t UTF-8 /tmp/app_final2.log)",
+      "PowerShell(git pull *)"
     ]
   },
   "disabledMcpjsonServers": [
