@@ -28,7 +28,9 @@ from ..config import (
     WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT,
     UI_THEME, UI_COLOR_THEME,
     MAX_STARTUP_TIME_SECONDS,
-    ALL_SUPPORTED_EXTENSIONS
+    ALL_SUPPORTED_EXTENSIONS,
+    CONVERSION_OUTPUT_FOLDER_NAME, DOCUMENT_OUTPUT_FOLDER_NAME,
+    COMBINATION_OUTPUT_FOLDER_NAME, PAGENUMBER_OUTPUT_FOLDER_NAME,
 )
 from ..utils.logger import logger
 from ..utils.drag_drop import drag_drop_handler
@@ -401,7 +403,9 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
         )
         self.conversion_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.conversion_output_dir_label, lambda: self.conversion_output_dir)
+        self._attach_tooltip(self.conversion_output_dir_label,
+            lambda: OutputManager.resolve_output_dir(
+                self.conversion_output_dir, self.conversion_files, CONVERSION_OUTPUT_FOLDER_NAME))
 
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
@@ -577,7 +581,9 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
         )
         self.combination_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.combination_output_dir_label, lambda: self.combination_output_dir)
+        self._attach_tooltip(self.combination_output_dir_label,
+            lambda: OutputManager.resolve_output_dir(
+                self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME))
 
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
@@ -816,7 +822,9 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
         )
         self.document_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.document_output_dir_label, lambda: self.document_output_dir)
+        self._attach_tooltip(self.document_output_dir_label,
+            lambda: OutputManager.resolve_output_dir(
+                self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME))
 
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
@@ -1293,10 +1301,6 @@ class UnifiedWindow:
             if new_files:
                 self.conversion_files.extend(new_files)
                 self.conversion_draggable_list.add_files(new_files)
-                # 出力先未設定の場合は最初のファイルの親フォルダを自動設定
-                if not self.conversion_output_dir:
-                    self.conversion_output_dir = str(Path(new_files[0]).parent)
-                    self._update_conversion_output_dir_label()
                 self._update_conversion_display()
                 logger.info(f"変換ファイル追加: {len(new_files)}個")
             else:
@@ -1317,11 +1321,6 @@ class UnifiedWindow:
 
                 # 旧式リストも互換性のため更新
                 self.combination_files.extend(new_files)
-
-                # 出力先未設定の場合は最初のファイルの親フォルダを自動設定
-                if not self.combination_output_dir:
-                    self.combination_output_dir = str(Path(new_files[0]).parent)
-                    self._update_combination_output_dir_label()
 
                 self._update_combination_display()
                 logger.info(f"結合ファイル追加: {len(new_files)}個")
@@ -1433,11 +1432,6 @@ class UnifiedWindow:
 
                     # 旧式リストも互換性のため更新
                     self.document_number_files.extend(new_files)
-
-                    # 出力先未設定の場合は最初のファイルの親フォルダを自動設定
-                    if not self.document_output_dir:
-                        self.document_output_dir = str(Path(new_files[0]).parent)
-                        self._update_document_output_dir_label()
 
                     self._update_document_number_display()
                     logger.info(f"資料NO挿入ファイル追加: {len(new_files)}個")
@@ -1680,6 +1674,7 @@ class UnifiedWindow:
             self.document_count_label.configure(text="ファイル数: 0")
             self.document_status.configure(text="PDFファイルを追加して連番設定を行ってください")
 
+        self._update_document_output_dir_label()
 
     def _start_document_number_insertion(self) -> None:
         """連番資料NO挿入開始"""
@@ -1910,7 +1905,9 @@ class UnifiedWindow:
             if hasattr(self, 'conversion_delete_btn'):
                 self.conversion_delete_btn.configure(state="disabled")
             self.conversion_status.configure(text="変換するファイルを追加してください")
-    
+
+        self._update_conversion_output_dir_label()
+
     def _update_combination_display(self) -> None:
         """結合タブ表示更新"""
         # ドラッグリストと旧式リストを同期
@@ -1935,6 +1932,8 @@ class UnifiedWindow:
                 self.combination_delete_btn.configure(state="disabled")
             self.combination_count_label.configure(text="ファイル数: 0")
             self.combination_status.configure(text="PDFファイルを追加してください")
+
+        self._update_combination_output_dir_label()
 
     def _clear_combination_files(self) -> None:
         """結合ファイルクリア"""
@@ -2036,12 +2035,14 @@ class UnifiedWindow:
             self._update_conversion_output_dir_label()
 
     def _update_conversion_output_dir_label(self) -> None:
-        if self.conversion_output_dir:
+        resolved = OutputManager.resolve_output_dir(
+            self.conversion_output_dir, self.conversion_files, CONVERSION_OUTPUT_FOLDER_NAME)
+        if resolved:
             self.conversion_output_dir_label.configure(
-                text=self._shorten_path(self.conversion_output_dir), text_color=CLR_DARK_TEXT)
+                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
         else:
             self.conversion_output_dir_label.configure(
-                text="（最初のファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+                text="変換元フォルダ内に「PDF変換済」を作成（既定）", text_color=CLR_GRAY_TEXT)
 
     # ── 結合タブ ─────────────────────────────────────────────────
     def _change_combination_output_dir(self) -> None:
@@ -2051,12 +2052,14 @@ class UnifiedWindow:
             self._update_combination_output_dir_label()
 
     def _update_combination_output_dir_label(self) -> None:
-        if self.combination_output_dir:
+        resolved = OutputManager.resolve_output_dir(
+            self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME)
+        if resolved:
             self.combination_output_dir_label.configure(
-                text=self._shorten_path(self.combination_output_dir), text_color=CLR_DARK_TEXT)
+                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
         else:
             self.combination_output_dir_label.configure(
-                text="（最初のファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+                text="変換元フォルダ内に「PDF結合済」を作成（既定）", text_color=CLR_GRAY_TEXT)
 
     # ── 資料NO挿入タブ ────────────────────────────────────────────
     def _change_document_output_dir(self) -> None:
@@ -2066,12 +2069,14 @@ class UnifiedWindow:
             self._update_document_output_dir_label()
 
     def _update_document_output_dir_label(self) -> None:
-        if self.document_output_dir:
+        resolved = OutputManager.resolve_output_dir(
+            self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME)
+        if resolved:
             self.document_output_dir_label.configure(
-                text=self._shorten_path(self.document_output_dir), text_color=CLR_DARK_TEXT)
+                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
         else:
             self.document_output_dir_label.configure(
-                text="（最初のファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+                text="変換元フォルダ内に「資料NO挿入済」を作成（既定）", text_color=CLR_GRAY_TEXT)
 
     # ── ページ番号挿入タブ ─────────────────────────────────────────
     def _change_pagenumber_output_dir(self) -> None:
@@ -2081,12 +2086,14 @@ class UnifiedWindow:
             self._update_pagenumber_output_dir_label()
 
     def _update_pagenumber_output_dir_label(self) -> None:
-        if self.pagenumber_output_dir:
+        resolved = OutputManager.resolve_output_dir(
+            self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME)
+        if resolved:
             self.pagenumber_output_dir_label.configure(
-                text=self._shorten_path(self.pagenumber_output_dir), text_color=CLR_DARK_TEXT)
+                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
         else:
             self.pagenumber_output_dir_label.configure(
-                text="（元ファイルと同じフォルダ）", text_color=CLR_GRAY_TEXT)
+                text="元ファイルのフォルダ内に「ページ番号挿入済」を作成（既定）", text_color=CLR_GRAY_TEXT)
 
     def _delete_selected_conversion(self) -> None:
         """選択中の変換ファイルを削除"""
@@ -2499,7 +2506,9 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
         )
         self.pagenumber_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.pagenumber_output_dir_label, lambda: self.pagenumber_output_dir)
+        self._attach_tooltip(self.pagenumber_output_dir_label,
+            lambda: OutputManager.resolve_output_dir(
+                self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME))
 
         # ── ファイル選択エリア ──
         self.pn_drop_frame = ctk.CTkFrame(
@@ -2675,10 +2684,7 @@ class UnifiedWindow:
         self._set_exec_btn_enabled(self.pn_execute_btn, True, CLR_PN_PRIMARY, CLR_PN_HOVER)
         self.pn_preview_btn.configure(state="normal")
         self.pn_status.configure(text=f"選択済み: {name}")
-        # 出力先未設定の場合は元ファイルの親フォルダを自動設定
-        if not self.pagenumber_output_dir:
-            self.pagenumber_output_dir = str(Path(path).parent)
-            self._update_pagenumber_output_dir_label()
+        self._update_pagenumber_output_dir_label()
 
     def _clear_pagenumber_file(self) -> None:
         self.pagenumber_files = []
@@ -2689,6 +2695,7 @@ class UnifiedWindow:
         self.pn_preview_btn.configure(state="disabled")
         self.pn_status.configure(text="PDFファイルを選択してください")
         self.pn_progress.set(0)
+        self._update_pagenumber_output_dir_label()
 
     # ── 実行 ────────────────────────────────────────────────────
 
