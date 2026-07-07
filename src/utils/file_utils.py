@@ -332,6 +332,25 @@ class OutputManager:
             n += 1
 
     @staticmethod
+    def resolve_output_dir(override: str, files: List[str], subfolder_name: str) -> str:
+        """
+        出力先フォルダを解決する。
+
+        Args:
+            override: 手動指定された出力先（空文字なら既定動作）
+            files: 対象ファイルのリスト（先頭ファイルの親フォルダが基準）
+            subfolder_name: 既定時に作成する機能別フォルダ名
+
+        Returns:
+            str: 解決済み出力先パス。files が空で override も無い場合は空文字
+        """
+        if override:
+            return override
+        if not files:
+            return ""
+        return str(Path(files[0]).parent / subfolder_name)
+
+    @staticmethod
     def archive_source_file(source_file_path: str) -> Optional[str]:
         """
         処理済みの元ファイルを、元ファイルと同じフォルダ内の「変換元」フォルダへ退避する。

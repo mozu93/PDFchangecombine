@@ -40,6 +40,12 @@ ALL_SUPPORTED_EXTENSIONS = (
 # 出力設定 (要件定義書 F-104)
 OUTPUT_FOLDER_NAME = "変換済"
 
+# 機能別の既定出力フォルダ名（変換元ファイルの親フォルダ配下に作成）
+CONVERSION_OUTPUT_FOLDER_NAME = "PDF変換済"
+DOCUMENT_OUTPUT_FOLDER_NAME = "資料NO挿入済"
+COMBINATION_OUTPUT_FOLDER_NAME = "PDF結合済"
+PAGENUMBER_OUTPUT_FOLDER_NAME = "ページ番号挿入済"
+
 # 処理済みの元ファイル退避先フォルダ名（元ファイルの散乱防止）
 SOURCE_ARCHIVE_FOLDER_NAME = "変換元"
 

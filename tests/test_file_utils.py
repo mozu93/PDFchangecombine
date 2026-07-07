@@ -184,6 +184,23 @@ class TestValidatePrefixText:
         assert InputValidator.validate_prefix_text("資料;") is False
 
 
+class TestResolveOutputDir:
+    """resolve_output_dir のテスト"""
+
+    def test_手動指定があればそのまま返す(self):
+        result = OutputManager.resolve_output_dir(
+            r"C:\out", [r"C:\src\a.pdf"], "PDF変換済")
+        assert result == r"C:\out"
+
+    def test_未指定なら先頭ファイルの親フォルダ配下のサブフォルダ(self):
+        result = OutputManager.resolve_output_dir(
+            "", [str(Path("C:/src/a.pdf")), str(Path("D:/other/b.pdf"))], "PDF変換済")
+        assert result == str(Path("C:/src") / "PDF変換済")
+
+    def test_ファイルなしなら空文字(self):
+        assert OutputManager.resolve_output_dir("", [], "PDF変換済") == ""
+
+
 if __name__ == "__main__":
     # テスト実行
     pytest.main([__file__, "-v"])
