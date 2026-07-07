@@ -317,6 +317,12 @@ class TestFunctionalIntegration(unittest.TestCase):
         self.assertTrue(result.success, "連番モード失敗")
 
         # 2. ハイフン連番モードテスト
+        # 挿入成功時に元ファイルは「変換元」フォルダへ退避されるため作り直す
+        pdf_files = [
+            self._create_test_pdf("doc1.pdf"),
+            self._create_test_pdf("doc2.pdf"),
+            self._create_test_pdf("doc3.pdf")
+        ]
         result = self.combiner.add_sequential_document_numbers(
             pdf_paths=pdf_files,
             numbering_type="hyphen",
