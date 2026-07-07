@@ -17,11 +17,14 @@ class CombineResult:
     """結合結果を保持するクラス"""
 
     def __init__(self, output_path: str = "", success: bool = False,
-                 error_message: str = "", processed_files: List[str] = None):
+                 error_message: str = "", processed_files: List[str] = None,
+                 failed_files: List[tuple] = None):
         self.output_path = output_path
         self.success = success
         self.error_message = error_message
         self.processed_files = processed_files or []
+        # 失敗したファイルの (パス, 理由) のリスト（対応していない処理では常に空）
+        self.failed_files = failed_files or []
         self.processing_time = 0.0
         self.total_pages = 0
 
@@ -136,6 +139,7 @@ class PDFCombiner:
             # PDF結合実行
             writer = fitz.open()
             processed_files = []
+            failed_files = []
 
             try:
                 for i, pdf_path in enumerate(valid_files):
@@ -174,14 +178,20 @@ class PDFCombiner:
                         logger.info(f"PDF追加完了: {Path(pdf_path).name}")
 
                     except Exception as e:
+                        failed_files.append((pdf_path, str(e)))
                         logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
                         continue
 
             finally:
                 pass  # try/finallyブロックの終了
 
+            result.failed_files = failed_files
+
             if len(writer) == 0:
                 result.error_message = "結合可能なページがありませんでした"
+                if failed_files:
+                    error_details = "\n".join([f"・{Path(path).name}: {error}" for path, error in failed_files])
+                    result.error_message += f"\n\n失敗詳細:\n{error_details}"
                 return result
 
             # ページ番号挿入
@@ -500,6 +510,7 @@ class PDFCombiner:
                 return result
 
             processed_files = []
+            failed_files = []
             total_pages = 0
 
             # 各ファイルを個別に処理
@@ -522,14 +533,21 @@ class PDFCombiner:
 
                         logger.info(f"資料NO挿入完了: {Path(new_path).name}")
                     else:
+                        failed_files.append((pdf_path, "処理失敗"))
                         logger.error(f"資料NO挿入失敗: {Path(pdf_path).name}")
 
                 except Exception as e:
+                    failed_files.append((pdf_path, str(e)))
                     logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
                     continue
 
+            result.failed_files = failed_files
+
             if not processed_files:
                 result.error_message = "処理可能なファイルがありませんでした"
+                if failed_files:
+                    error_details = "\n".join([f"・{Path(path).name}: {error}" for path, error in failed_files])
+                    result.error_message += f"\n\n失敗詳細:\n{error_details}"
                 return result
 
 
@@ -661,6 +679,8 @@ class PDFCombiner:
                     failed_files.append((pdf_path, str(e)))
                     logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
                     continue
+
+            result.failed_files = failed_files
 
             # 結果判定
             if not processed_files:

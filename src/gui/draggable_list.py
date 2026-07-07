@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Callable, Optional, Dict
 import tkinter as tk
 import re
+import time
 
 from .theme import (
     CLR_LIGHT_BG, CLR_SEL_BORDER, CLR_RED_LIGHT, CLR_RED_TEXT,
@@ -35,6 +36,7 @@ class DraggableListItem(ctk.CTkFrame):
         self.drag_enabled = drag_enabled
         self.is_selected = False
         self.is_dragging = False
+        self.status: Optional[str] = None  # None / "success" / "failed"
         self._setup_ui()
         self._setup_events()
 
@@ -42,6 +44,13 @@ class DraggableListItem(ctk.CTkFrame):
         self.configure(height=26, fg_color="transparent", corner_radius=4)
 
         self.drag_handle = None
+
+        # ── 右端: 処理結果ステータス（✓ / ✗、初期は非表示） ──
+        self.status_label = ctk.CTkLabel(
+            self, text="", width=16, height=16,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold")
+        )
+        self.status_label.pack(side="right", padx=(0, 2), pady=2)
 
         # ── 右: ×ボタン（ホバー時のみ表示） ──
         self.remove_btn = None
@@ -77,6 +86,85 @@ class DraggableListItem(ctk.CTkFrame):
             text_color=CLR_DARK_TEXT
         )
         self.filename_label.pack(anchor="w")
+        self._setup_path_tooltip()
+
+    def _setup_path_tooltip(self):
+        """ファイル名にホバーするとフルパスを表示するツールチップ
+
+        <Leave>だけに頼ると子ウィジェットにイベントが奪われ発火しないことがあるため、
+        定期的にポインタ位置・移動量・経過時間を確認して自動的に閉じる。
+
+        表示のたびにToplevelを作り直す（destroy）と、Windows上ではウィンドウを
+        破棄してもその領域の再描画が行われず、見た目上消えないことがある
+        （overrideredirectウィンドウの既知の再描画不具合）。
+        そのため単一のToplevelを使い回し、withdraw/deiconifyで表示を切り替える。
+        """
+        state = {"win": None, "label": None, "job": None, "origin": (0, 0), "shown_at": 0.0}
+        label = self.filename_label
+
+        def _cancel_poll():
+            if state["job"] is not None:
+                try:
+                    self.after_cancel(state["job"])
+                except Exception:
+                    pass
+                state["job"] = None
+
+        def _hide(event=None):
+            _cancel_poll()
+            if state["win"] is not None:
+                state["win"].withdraw()
+
+        def _should_hide() -> bool:
+            try:
+                if not label.winfo_exists():
+                    return True
+                x, y = label.winfo_pointerxy()
+                lx, ly = label.winfo_rootx(), label.winfo_rooty()
+                inside = lx <= x <= lx + label.winfo_width() and ly <= y <= ly + label.winfo_height()
+                ox, oy = state["origin"]
+                moved = ((x - ox) ** 2 + (y - oy) ** 2) ** 0.5 > 20
+                timed_out = (time.time() - state["shown_at"]) > 4.0
+                return (not inside) or moved or timed_out
+            except Exception:
+                return True
+
+        def _poll():
+            if _should_hide():
+                _hide()
+            else:
+                state["job"] = self.after(200, _poll)
+
+        def _ensure_window():
+            if state["win"] is None:
+                win = ctk.CTkToplevel(self)
+                win.overrideredirect(True)
+                win.attributes("-topmost", True)
+                state["label"] = ctk.CTkLabel(
+                    win, text="", font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+                    fg_color="#2D3748", text_color="white",
+                    corner_radius=4, padx=8, pady=4
+                )
+                state["label"].pack()
+                win.withdraw()
+                state["win"] = win
+
+        def _show(event=None):
+            _cancel_poll()
+            _ensure_window()
+            state["label"].configure(text=self.file_path)
+            x = label.winfo_rootx()
+            y = label.winfo_rooty() + label.winfo_height() + 4
+            state["win"].geometry(f"+{x}+{y}")
+            state["win"].deiconify()
+            state["win"].lift()
+            state["origin"] = label.winfo_pointerxy()
+            state["shown_at"] = time.time()
+            state["job"] = self.after(200, _poll)
+
+        label.bind("<Enter>", _show, add="+")
+        label.bind("<Leave>", _hide, add="+")
+        label.bind("<Button-1>", _hide, add="+")
 
     def _setup_events(self):
         clickable = [self, self.text_frame, self.filename_label]
@@ -150,6 +238,16 @@ class DraggableListItem(ctk.CTkFrame):
     def set_selected(self, selected: bool):
         self.is_selected = selected
         self._update_appearance()
+
+    def set_status(self, status: Optional[str]):
+        """処理結果ステータスを設定（None / "success" / "failed"）"""
+        self.status = status
+        if status == "success":
+            self.status_label.configure(text="✓", text_color="#38A169")
+        elif status == "failed":
+            self.status_label.configure(text="✕", text_color=CLR_RED_TEXT)
+        else:
+            self.status_label.configure(text="")
 
     def _update_appearance(self):
         if self.is_selected:
@@ -249,6 +347,35 @@ class DraggableFileList(ctk.CTkScrollableFrame):
     def get_selected_files(self) -> List[str]:
         """選択されたファイルのリストを取得"""
         return self.selected_files.copy()
+
+    def set_status(self, file_path: str, status: Optional[str]) -> None:
+        """ファイルの処理結果ステータスを設定（None / "success" / "failed"）"""
+        item = self.items.get(file_path)
+        if item:
+            item.set_status(status)
+
+    def clear_statuses(self) -> None:
+        """全アイテムの処理結果ステータスをクリア"""
+        for item in self.items.values():
+            item.set_status(None)
+
+    def get_files_by_status(self, status: str) -> List[str]:
+        """指定ステータスのファイルパスをリスト順で取得"""
+        return [fp for fp in self.file_paths if self.items.get(fp) and self.items[fp].status == status]
+
+    def select_all(self) -> None:
+        """全アイテムを選択状態にする"""
+        self.selected_files = self.file_paths.copy()
+        self._update_all_appearances()
+        if self.on_selection_change:
+            self.on_selection_change(self.selected_files)
+
+    def clear_selection(self) -> None:
+        """選択状態を解除する"""
+        self.selected_files = []
+        self._update_all_appearances()
+        if self.on_selection_change:
+            self.on_selection_change(self.selected_files)
 
     def set_external_drop(self, callback: Callable, file_filter: Optional[Callable] = None) -> None:
         """OSからのD&D受け入れ設定を保存（新規アイテム生成時にも適用）"""

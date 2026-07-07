@@ -4,6 +4,7 @@
 """
 
 import customtkinter as ctk
+import tkinter as tk
 from typing import Optional, List, Dict
 import time
 import tkinter.filedialog as fd
@@ -37,11 +38,15 @@ from .draggable_list import DraggableFileList
 from .update_banner import UpdateBanner
 from .help_dialog import HelpDialog
 from .preview_dialog import PDFPreviewDialog, render_doc_number_preview, render_page_number_preview
+from .result_dialog import FailureDetailDialog
+from .completion_banner import CompletionBanner
+from .confirm_dialog import confirm_with_skip
 from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
     CLR_RED_TEXT, CLR_GRAY_TEXT, CLR_DARK_TEXT, CLR_LIST_HEADER,
     CLR_WHITE, get_file_type_badge,
+    CLR_DISABLED_BG, CLR_DISABLED_TEXT,
     FONT_FAMILY,
     TAB_CONVERSION, TAB_COMBINATION, TAB_DOCUMENT, TAB_PAGENUMBER, TAB_INACTIVE,
     CLR_CONV_PRIMARY, CLR_CONV_HOVER,
@@ -50,6 +55,7 @@ from .theme import (
     CLR_PN_PRIMARY,   CLR_PN_HOVER,
 )
 from ..utils.error_handler import error_handler, ErrorSeverity
+from ..utils.settings import load_settings, save_settings, DEFAULT_SETTINGS
 from ..core.converter import PDFConverter
 from ..core.combiner import PDFCombiner
 
@@ -80,6 +86,7 @@ class UnifiedWindow:
         # メインウィンドウ作成
         self.root = DndCTk()
         self._setup_window()
+        self._init_tooltip_manager()
 
         # コア機能
         self.pdf_converter = PDFConverter()
@@ -90,9 +97,18 @@ class UnifiedWindow:
         self.combination_files: List[str] = []
         self.document_number_files: List[str] = []  # 資料NO挿入用ファイル（旧式、互換性のため残す）
 
+        # PDF変換のキャンセル制御（ファイル境界で中断）
+        self._conversion_cancel_event = threading.Event()
+
         # オプション管理
         self.split_excel_sheets_var = ctk.BooleanVar(value=False)
         self.pagenumber_files: List[str] = []
+
+        # 完了後にフォルダを自動的に開くか（設定で永続化）
+        self.auto_open_output_folder_var = ctk.BooleanVar(value=True)
+        # 確認ダイアログの「今後表示しない」フラグ（設定で永続化）
+        self.skip_confirm_document_number = False
+        self.skip_confirm_pagenumber = False
 
         # 出力先ディレクトリ（各タブ）
         self.conversion_output_dir: str = ""
@@ -103,10 +119,14 @@ class UnifiedWindow:
         # UI作成
         self._create_main_ui()
         self._setup_drag_drop()
-        
+        self._setup_keyboard_shortcuts()
+
+        # 前回終了時の設定を復元
+        self._load_user_settings()
+
         # エラーハンドラー設定
         error_handler.parent_window = self.root
-        
+
         self._log_startup_time()
     
     def _setup_window(self) -> None:
@@ -185,7 +205,7 @@ class UnifiedWindow:
             text_color="white"
         ).pack(side="left", padx=16, pady=10)
 
-        ctk.CTkButton(
+        help_btn = ctk.CTkButton(
             header_frame,
             text="?",
             width=32, height=32,
@@ -195,7 +215,34 @@ class UnifiedWindow:
             text_color="white",
             font=ctk.CTkFont(family=FONT_FAMILY, size=15, weight="bold"),
             command=self._open_help,
-        ).pack(side="right", padx=12, pady=10)
+        )
+        help_btn.pack(side="right", padx=12, pady=10)
+        self._attach_tooltip(help_btn, "使い方・バージョン情報を表示")
+
+        settings_reset_btn = ctk.CTkButton(
+            header_frame,
+            text="⚙",
+            width=32, height=32,
+            corner_radius=16,
+            fg_color="#3D82C4",
+            hover_color="#5494D6",
+            text_color="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=15, weight="bold"),
+            command=self._reset_settings_to_default,
+        )
+        settings_reset_btn.pack(side="right", padx=(0, 4), pady=10)
+        self._attach_tooltip(settings_reset_btn, "設定をデフォルトに戻す")
+
+        auto_open_switch = ctk.CTkSwitch(
+            header_frame, text="自動で開く",
+            variable=self.auto_open_output_folder_var,
+            onvalue=True, offvalue=False,
+            text_color="white",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            progress_color="#3D82C4"
+        )
+        auto_open_switch.pack(side="right", padx=(0, 12), pady=10)
+        self._attach_tooltip(auto_open_switch, "処理完了後に出力フォルダを自動的に開く")
 
         # ── カスタムタブバー ──
         _TAB_DEFS = [
@@ -267,6 +314,7 @@ class UnifiedWindow:
                 frame.pack(fill="both", expand=True)
             else:
                 frame.pack_forget()
+        self._current_tab = name
     
     def _create_conversion_ui(self) -> None:
         """PDF変換タブUI"""
@@ -276,6 +324,9 @@ class UnifiedWindow:
             text="Office文書・画像ファイルをPDFに変換します",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(pady=(10, 5))
+
+        self.conversion_banner = CompletionBanner(self.conversion_tab, CLR_CONV_PRIMARY, CLR_CONV_HOVER)
+        self.conversion_banner.pack(fill="x", padx=15, pady=(0, 4))
 
         # ── ツールバー ──
         toolbar = ctk.CTkFrame(self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
@@ -303,7 +354,7 @@ class UnifiedWindow:
         self.conversion_delete_btn.pack(side="left", padx=(0, 4), pady=6)
 
         self.conversion_clear_btn = ctk.CTkButton(
-            toolbar, text="全クリア",
+            toolbar, text="クリア",
             command=self._clear_all_conversion,
             height=32, width=80,
             fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
@@ -312,6 +363,17 @@ class UnifiedWindow:
             state="disabled"
         )
         self.conversion_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.conversion_retry_failed_btn = ctk.CTkButton(
+            toolbar, text="⟲ 失敗のみ再実行",
+            command=self._retry_failed_conversion,
+            height=32, width=130,
+            fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
+            hover_color="#FEB2B2", border_width=1, border_color="#FEB2B2",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            state="disabled"
+        )
+        self.conversion_retry_failed_btn.pack(side="left", padx=(0, 4), pady=6)
 
         self.conversion_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
@@ -325,16 +387,21 @@ class UnifiedWindow:
         conv_out_frame.pack(fill="x", padx=15, pady=(0, 4))
         ctk.CTkLabel(conv_out_frame, text="出力先:",
                      font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
+        self.conversion_change_output_btn = ctk.CTkButton(
+            conv_out_frame, text="📂 変更", command=self._change_conversion_output_dir,
+            height=26, width=80, fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        # 右側のボタンを先にpackして幅を確保してから、残り幅を出力先ラベルに埋めさせる
+        # （先にfill=x,expand=Trueのラベルをpackすると、後からpackする側のウィジェットが
+        # 　幅0に押し潰されることがあるため）
+        self.conversion_change_output_btn.pack(side="right", padx=(4, 8), pady=5)
         self.conversion_output_dir_label = ctk.CTkLabel(
             conv_out_frame, text="（最初のファイルと同じフォルダ）",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
         )
         self.conversion_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        ctk.CTkButton(
-            conv_out_frame, text="📂 変更", command=self._change_conversion_output_dir,
-            height=26, width=80, fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
-        ).pack(side="right", padx=(4, 8), pady=5)
+        self._attach_tooltip(self.conversion_output_dir_label, lambda: self.conversion_output_dir)
 
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
@@ -357,8 +424,8 @@ class UnifiedWindow:
             text="🔄 PDF変換実行",
             command=self._start_conversion,
             height=40, state="disabled",
-            fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
-            text_color="white", text_color_disabled="white",
+            fg_color=CLR_DISABLED_BG, hover_color=CLR_DISABLED_BG,
+            text_color="white", text_color_disabled=CLR_DISABLED_TEXT,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.conversion_convert_btn.pack(side="bottom", pady=(6, 6))
@@ -417,6 +484,9 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         )
         desc_label.pack(pady=(10, 5))
+
+        self.combination_banner = CompletionBanner(self.combination_tab, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
+        self.combination_banner.pack(fill="x", padx=15, pady=(0, 4))
         
         # ── ツールバー ──
         toolbar = ctk.CTkFrame(self.combination_tab, fg_color=CLR_TOOLBAR_BG,
@@ -462,6 +532,7 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
         self.combination_move_up_btn.pack(side="left", padx=(0, 2), pady=6)
+        self._attach_tooltip(self.combination_move_up_btn, "選択したファイルを上に移動")
 
         self.combination_move_down_btn = ctk.CTkButton(
             toolbar, text="↓", command=self._move_combination_down,
@@ -471,6 +542,7 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
         self.combination_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
+        self._attach_tooltip(self.combination_move_down_btn, "選択したファイルを下に移動")
 
         self.combination_sort_btn = ctk.CTkButton(
             toolbar, text="Ａ↓",
@@ -481,6 +553,7 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
         self.combination_sort_btn.pack(side="left", padx=(0, 4), pady=6)
+        self._attach_tooltip(self.combination_sort_btn, "ファイル名の昇順（自然順）に並び替え")
 
         self.combination_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
@@ -494,16 +567,17 @@ class UnifiedWindow:
         comb_out_frame.pack(fill="x", padx=15, pady=(0, 4))
         ctk.CTkLabel(comb_out_frame, text="出力先:",
                      font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
-        self.combination_output_dir_label = ctk.CTkLabel(
-            comb_out_frame, text="（最初のファイルと同じフォルダ）",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
-        )
-        self.combination_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
         ctk.CTkButton(
             comb_out_frame, text="📂 変更", command=self._change_combination_output_dir,
             height=26, width=80, fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         ).pack(side="right", padx=(4, 8), pady=5)
+        self.combination_output_dir_label = ctk.CTkLabel(
+            comb_out_frame, text="（最初のファイルと同じフォルダ）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
+        )
+        self.combination_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
+        self._attach_tooltip(self.combination_output_dir_label, lambda: self.combination_output_dir)
 
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
@@ -526,8 +600,8 @@ class UnifiedWindow:
             text="📋 PDF結合実行",
             command=self._start_combination,
             height=40, state="disabled",
-            fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
-            text_color="white", text_color_disabled="white",
+            fg_color=CLR_DISABLED_BG, hover_color=CLR_DISABLED_BG,
+            text_color="white", text_color_disabled=CLR_DISABLED_TEXT,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.combination_combine_btn.pack(side="bottom", pady=(6, 6))
@@ -586,6 +660,7 @@ class UnifiedWindow:
             sub_row, textvariable=self.start_page_var, width=40
         )
         self.start_page_entry.pack(side="left")
+        self._make_digits_only(self.start_page_entry)
 
         self.start_page_unit = ctk.CTkLabel(
             sub_row, text="ページ", font=ctk.CTkFont(family=FONT_FAMILY, size=14)
@@ -602,6 +677,7 @@ class UnifiedWindow:
             sub_row, textvariable=self.start_number_var, width=40
         )
         self.start_number_entry.pack(side="left")
+        self._make_digits_only(self.start_number_entry)
 
         # 左綴じ対応スイッチ（ページ番号オプションの下）
         binding_row = ctk.CTkFrame(options_frame, fg_color="transparent")
@@ -648,6 +724,9 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(pady=(10, 5))
 
+        self.document_banner = CompletionBanner(self.document_number_tab, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
+        self.document_banner.pack(fill="x", padx=15, pady=(0, 4))
+
         # ── ツールバー ──
         toolbar = ctk.CTkFrame(self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
                                 border_width=1, border_color=CLR_BORDER, corner_radius=6)
@@ -692,6 +771,7 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
         self.document_move_up_btn.pack(side="left", padx=(0, 2), pady=6)
+        self._attach_tooltip(self.document_move_up_btn, "選択したファイルを上に移動")
 
         self.document_move_down_btn = ctk.CTkButton(
             toolbar, text="↓", command=self._move_document_down,
@@ -701,6 +781,7 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
         self.document_move_down_btn.pack(side="left", padx=(0, 4), pady=6)
+        self._attach_tooltip(self.document_move_down_btn, "選択したファイルを下に移動")
 
         self.document_sort_btn = ctk.CTkButton(
             toolbar, text="Ａ↓",
@@ -711,6 +792,7 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
         self.document_sort_btn.pack(side="left", padx=(0, 4), pady=6)
+        self._attach_tooltip(self.document_sort_btn, "ファイル名の昇順（自然順）に並び替え")
 
         self.document_count_label = ctk.CTkLabel(
             toolbar, text="ファイル数: 0",
@@ -724,16 +806,17 @@ class UnifiedWindow:
         doc_out_frame.pack(fill="x", padx=15, pady=(0, 4))
         ctk.CTkLabel(doc_out_frame, text="出力先:",
                      font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
-        self.document_output_dir_label = ctk.CTkLabel(
-            doc_out_frame, text="（最初のファイルと同じフォルダ）",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
-        )
-        self.document_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
         ctk.CTkButton(
             doc_out_frame, text="📂 変更", command=self._change_document_output_dir,
             height=26, width=80, fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         ).pack(side="right", padx=(4, 8), pady=5)
+        self.document_output_dir_label = ctk.CTkLabel(
+            doc_out_frame, text="（最初のファイルと同じフォルダ）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
+        )
+        self.document_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
+        self._attach_tooltip(self.document_output_dir_label, lambda: self.document_output_dir)
 
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
@@ -771,8 +854,8 @@ class UnifiedWindow:
             text="📄 資料NO挿入実行",
             command=self._start_document_number_insertion,
             height=40, state="disabled",
-            fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
-            text_color="white", text_color_disabled="white",
+            fg_color=CLR_DISABLED_BG, hover_color=CLR_DISABLED_BG,
+            text_color="white", text_color_disabled=CLR_DISABLED_TEXT,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.document_execute_btn.pack(side="left")
@@ -944,6 +1027,128 @@ class UnifiedWindow:
         )
         self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
 
+    def _make_digits_only(self, entry: ctk.CTkEntry) -> None:
+        """Entryを数字のみ入力可能にする（空文字は許可、それ以外の非数字は拒否）"""
+        def _validate(proposed: str) -> bool:
+            return proposed == "" or proposed.isdigit()
+        vcmd = (entry.register(_validate), "%P")
+        entry.configure(validate="key", validatecommand=vcmd)
+
+    def _set_exec_btn_enabled(self, btn: ctk.CTkButton, enabled: bool,
+                               active_fg: str, active_hover: str) -> None:
+        """実行ボタンの有効/無効を切り替える。
+
+        CTkButtonはdisabled時にfg_colorを変えないため、有効時とほぼ同じ見た目になり
+        「押せそう」に見えてしまう。無効時は明示的にグレー系配色へ切り替える。
+        """
+        if enabled:
+            btn.configure(state="normal", fg_color=active_fg, hover_color=active_hover)
+        else:
+            btn.configure(state="disabled", fg_color=CLR_DISABLED_BG, hover_color=CLR_DISABLED_BG)
+
+    def _init_tooltip_manager(self) -> None:
+        """ツールチップの一元管理を初期化し、常駐の監視ループを開始する。
+
+        個々のウィジェットごとにafter()タイマーを持たせる方式は、複合ウィジェット
+        （CTkSwitch/CTkButton等）で<Leave>が発火しない場合に取りこぼす恐れがある。
+        代わりに単一の監視ループ（UpdateBannerの_pollと同じ方式）でポインタ位置を
+        定期的に確認する。
+
+        `fill="x", expand=True` の幅広ラベル（出力先パス等）は表示文字列より
+        ウィジェット自体の当たり判定がはるかに広いため、ウィジェットの外に
+        出たかどうかだけでは同じ行の余白にいる間ずっと消えない。
+        そのため、表示開始位置からのポインタ移動量と経過時間でも閉じる。
+
+        表示のたびにToplevelを作り直す（destroy）と、Windows上ではウィンドウを
+        破棄してもその領域の再描画が行われず、見た目上ツールチップが消えない
+        ことがある（overrideredirectウィンドウの既知の再描画不具合）。
+        そのため単一のToplevelを使い回し、withdraw/deiconifyで表示を切り替える。
+        """
+        self._tooltip_widget = None
+        self._tooltip_origin = (0, 0)
+        self._tooltip_shown_at = 0.0
+
+        self._tooltip_win = ctk.CTkToplevel(self.root)
+        self._tooltip_win.overrideredirect(True)
+        self._tooltip_win.attributes("-topmost", True)
+        self._tooltip_label = ctk.CTkLabel(
+            self._tooltip_win, text="", font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            fg_color=("#2D3748", "#2D3748"), text_color="white",
+            corner_radius=4, padx=8, pady=4
+        )
+        self._tooltip_label.pack()
+        self._tooltip_win.withdraw()
+
+        self._tooltip_watchdog()
+
+    def _tooltip_watchdog(self) -> None:
+        if self._tooltip_widget is not None:
+            should_hide = True
+            try:
+                if self._tooltip_widget.winfo_exists():
+                    x, y = self._tooltip_widget.winfo_pointerxy()
+                    wx, wy = self._tooltip_widget.winfo_rootx(), self._tooltip_widget.winfo_rooty()
+                    ww, wh = self._tooltip_widget.winfo_width(), self._tooltip_widget.winfo_height()
+                    inside = (wx <= x <= wx + ww and wy <= y <= wy + wh)
+                    ox, oy = self._tooltip_origin
+                    moved = ((x - ox) ** 2 + (y - oy) ** 2) ** 0.5 > 20
+                    timed_out = (time.time() - self._tooltip_shown_at) > 4.0
+                    should_hide = (not inside) or moved or timed_out
+            except Exception:
+                should_hide = True
+            if should_hide:
+                self._hide_tooltip()
+        try:
+            self.root.after(150, self._tooltip_watchdog)
+        except Exception:
+            pass
+
+    def _show_tooltip(self, widget, text_getter) -> None:
+        text = text_getter() if callable(text_getter) else text_getter
+        if not text:
+            self._hide_tooltip()
+            return
+        self._tooltip_label.configure(text=text)
+        x = widget.winfo_rootx() + 12
+        y = widget.winfo_rooty() + widget.winfo_height() + 6
+        self._tooltip_win.geometry(f"+{x}+{y}")
+        self._tooltip_win.deiconify()
+        self._tooltip_win.lift()
+        self._tooltip_widget = widget
+        self._tooltip_origin = widget.winfo_pointerxy()
+        self._tooltip_shown_at = time.time()
+
+    def _hide_tooltip(self, widget=None) -> None:
+        if widget is not None and self._tooltip_widget is not widget:
+            return
+        self._tooltip_win.withdraw()
+        self._tooltip_widget = None
+
+    def _attach_tooltip(self, widget, text_getter) -> None:
+        """ウィジェットにホバーツールチップを付与する。
+
+        text_getter: 呼び出し時に表示文字列を返すcallable、または固定文字列。
+        """
+        widget.bind("<Enter>", lambda e, w=widget, tg=text_getter: self._show_tooltip(w, tg), add="+")
+        widget.bind("<Leave>", lambda e, w=widget: self._hide_tooltip(w), add="+")
+        widget.bind("<Button-1>", lambda e, w=widget: self._hide_tooltip(w), add="+")
+
+    def _send_files_to_document_tab(self, paths: List[str]) -> None:
+        """処理結果を資料NO挿入タブへ送る"""
+        existing = [p for p in paths if Path(p).exists()]
+        if not existing:
+            return
+        self._add_document_number_files(existing)
+        self._switch_tab("資料NO挿入")
+
+    def _send_files_to_combination_tab(self, paths: List[str]) -> None:
+        """処理結果をPDF結合タブへ送る"""
+        existing = [p for p in paths if Path(p).exists()]
+        if not existing:
+            return
+        self._add_combination_files(existing)
+        self._switch_tab("PDF結合")
+
     def _open_folder(self, folder_path: str):
         """指定されたフォルダをエクスプローラーで開く"""
         import os
@@ -1028,6 +1233,55 @@ class UnifiedWindow:
             logger.info("代替ドラッグ&ドロップ機能設定完了")
         except Exception as e:
             logger.warning(f"代替ドラッグ&ドロップ設定失敗: {e}")
+
+    # ════════════════════════════════════════════════════════════
+    # キーボード操作（Delete / Ctrl+A / Esc）
+    # ════════════════════════════════════════════════════════════
+
+    def _active_draggable_list(self) -> Optional[DraggableFileList]:
+        """現在表示中のタブに対応するファイルリストを返す（対象外タブはNone）"""
+        mapping = {
+            "PDF変換": self.conversion_draggable_list,
+            "資料NO挿入": self.document_draggable_list,
+            "PDF結合": self.combination_draggable_list,
+        }
+        return mapping.get(getattr(self, "_current_tab", None))
+
+    def _is_text_input_focused(self) -> bool:
+        """入力欄にフォーカスがある間はリスト操作用ショートカットを無効化する"""
+        widget = self.root.focus_get()
+        return isinstance(widget, (tk.Entry, tk.Text))
+
+    def _setup_keyboard_shortcuts(self) -> None:
+        """ファイルリスト共通のキーボード操作を設定する"""
+        self.root.bind_all("<Delete>", self._on_key_delete_selected)
+        self.root.bind_all("<Control-a>", self._on_key_select_all)
+        self.root.bind_all("<Control-A>", self._on_key_select_all)
+        self.root.bind_all("<Escape>", self._on_key_clear_selection)
+
+    def _on_key_delete_selected(self, event=None) -> None:
+        if self._is_text_input_focused():
+            return
+        tab = getattr(self, "_current_tab", None)
+        if tab == "PDF変換":
+            self._delete_selected_conversion()
+        elif tab == "資料NO挿入":
+            self._delete_selected_document()
+        elif tab == "PDF結合":
+            self._delete_selected_combination()
+
+    def _on_key_select_all(self, event=None):
+        if self._is_text_input_focused():
+            return None
+        lst = self._active_draggable_list()
+        if lst:
+            lst.select_all()
+        return "break"
+
+    def _on_key_clear_selection(self, event=None) -> None:
+        lst = self._active_draggable_list()
+        if lst:
+            lst.clear_selection()
     
     def _add_conversion_files(self, paths: List[str]) -> None:
         """変換ファイル追加"""
@@ -1232,7 +1486,7 @@ class UnifiedWindow:
 
         self._update_document_number_display()
 
-        self.document_execute_btn.configure(state="disabled")
+        self._set_exec_btn_enabled(self.document_execute_btn, False, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
         self.document_clear_btn.configure(state="disabled")
         self.document_count_label.configure(text="ファイル数: 0")
         self.document_status.configure(text="PDFファイルを追加して資料番号を入力してください")
@@ -1316,6 +1570,7 @@ class UnifiedWindow:
 
     def _on_prefix_changed(self, value: str) -> None:
         """挿入文字変更時の処理"""
+        changed_notice = None
         if value == "その他":
             self.custom_prefix_entry.pack(side="left", padx=(0, 20))
             self.numbering_type_var.set("連番")
@@ -1325,6 +1580,7 @@ class UnifiedWindow:
             if value == "参考":
                 self.numbering_type_var.set("番号なし")
                 self.number_var.set("0")
+                changed_notice = "「参考」選択に伴い、番号方式を「番号なし」に切り替えました"
             else:
                 self.numbering_type_var.set("連番")
                 self.number_var.set("1")
@@ -1337,6 +1593,8 @@ class UnifiedWindow:
             self.number_entry.configure(state="normal")
         self._update_numbering_preview()
         self._update_execute_button_state()
+        if changed_notice:
+            self.document_status.configure(text=changed_notice)
 
     def _on_numbering_type_changed(self, value: str) -> None:
         """番号方式変更時の処理"""
@@ -1395,8 +1653,7 @@ class UnifiedWindow:
             ready = bool(self.document_number_files) and prefix_ok
         else:
             ready = bool(self.document_number_files and self.number_var.get().strip()) and prefix_ok
-        state = "normal" if ready else "disabled"
-        self.document_execute_btn.configure(state=state)
+        self._set_exec_btn_enabled(self.document_execute_btn, ready, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
         self.document_preview_btn.configure(state="normal" if self.document_number_files else "disabled")
 
     def _update_document_number_display(self) -> None:
@@ -1417,7 +1674,7 @@ class UnifiedWindow:
         else:
             # ファイルがない場合は初期メッセージを表示
             self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
-            self.document_execute_btn.configure(state="disabled")
+            self._set_exec_btn_enabled(self.document_execute_btn, False, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
             self.document_preview_btn.configure(state="disabled")
             self.document_clear_btn.configure(state="disabled")
             self.document_count_label.configure(text="ファイル数: 0")
@@ -1481,8 +1738,8 @@ class UnifiedWindow:
             # 確認メッセージ
             all_pages_str = "全ページ" if self.insert_all_pages_var.get() else "表紙（1ページ目）のみ"
             out_dir_disp = self.document_output_dir or "（元ファイルと同じフォルダ）"
-            result = messagebox.askyesno(
-                "挿入の確認",
+            result = confirm_with_skip(
+                self.root, "挿入の確認",
                 f"以下の内容で挿入を実行しますか？\n\n"
                 f"• 対象ファイル数: {len(self.document_number_files)}個\n"
                 f"• 挿入文字: {prefix}\n"
@@ -1490,14 +1747,16 @@ class UnifiedWindow:
                 f"• パターン: {preview}\n"
                 f"• 挿入ページ: {all_pages_str}\n"
                 f"• 出力先: {out_dir_disp}\n\n"
-                f"元ファイルはそのまま残ります。"
+                f"元ファイルはそのまま残ります。",
+                skip_getter=lambda: self.skip_confirm_document_number,
+                skip_setter=lambda v: setattr(self, "skip_confirm_document_number", v)
             )
 
             if not result:
                 return
 
             # UIを無効化
-            self.document_execute_btn.configure(state="disabled")
+            self._set_exec_btn_enabled(self.document_execute_btn, False, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
             self.document_status.configure(text="資料NO挿入処理中...")
             self.document_progress.set(0)
 
@@ -1583,38 +1842,49 @@ class UnifiedWindow:
         """資料NO挿入完了処理"""
         self.document_progress.set(1.0)
 
+        # 各ファイルの処理結果をリストに反映（リストは自動クリアしない）
+        if result.success or result.failed_files:
+            failed_paths = {p for p, _ in result.failed_files}
+            for fp in self.document_number_files:
+                self.document_draggable_list.set_status(
+                    fp, "failed" if fp in failed_paths else "success"
+                )
+
         if result.success:
-            message = (f"資料NO挿入が完了しました！\n\n"
-                       f"• 処理ファイル数: {len(result.processed_files)}個\n"
-                       f"• 総ページ数: {result.total_pages}ページ\n"
-                       f"• 処理時間: {result.processing_time:.1f}秒\n\n"
-                       f"各ファイルに資料NOが正しく挿入されました。")
             self.document_status.configure(
                 text=f"資料NO挿入完了: {result.total_pages}ページ ({len(result.processed_files)}ファイル)"
             )
-            messagebox.showinfo("資料NO挿入完了", message)
 
             processed = result.processed_files[:]
+            folder = str(Path(processed[0]).parent) if processed else None
 
-            def open_folder():
-                if processed:
-                    self._open_folder(str(Path(processed[0]).parent))
+            if folder and self.auto_open_output_folder_var.get():
+                self._open_folder(folder)
 
-            open_folder()
+            buttons = []
+            if folder:
+                buttons.append(("📂 フォルダを開く", lambda f=folder: self._open_folder(f)))
+            buttons.append(("→ 結合タブへ送る",
+                             lambda p=processed: self._send_files_to_combination_tab(p)))
+
+            self.document_banner.show(
+                f"資料NO挿入が完了しました（{len(result.processed_files)}個 / {result.total_pages}ページ）",
+                success=(len(result.failed_files) == 0), buttons=buttons
+            )
         else:
             message = f"資料NO挿入に失敗しました。\n\nエラー: {result.error_message}"
             self.document_status.configure(text=f"資料NO挿入失敗: {result.error_message}")
             messagebox.showerror("資料NO挿入失敗", message)
 
-        # ファイルリストをクリア
-        self._clear_document_number_files()
+        if result.failed_files:
+            FailureDetailDialog(self.root, "資料NO挿入失敗の詳細", result.failed_files)
 
-        # UI有効化
-        self.document_execute_btn.configure(state="normal")
+        # UI有効化（リストは保持し、失敗ファイルの再確認・再実行に備える）
+        self._set_exec_btn_enabled(self.document_execute_btn, True, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
 
     def _reset_document_number_ui(self) -> None:
         """資料NO挿入UI リセット"""
-        self.document_execute_btn.configure(state="normal")
+        self._set_exec_btn_enabled(self.document_execute_btn, True, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
         self.document_progress.set(0)
         self.document_status.configure(text="エラーが発生しました")
     
@@ -1626,7 +1896,7 @@ class UnifiedWindow:
 
         if current_files:
             self.initial_message_label.pack_forget()
-            self.conversion_convert_btn.configure(state="normal")
+            self._set_exec_btn_enabled(self.conversion_convert_btn, True, CLR_CONV_PRIMARY, CLR_CONV_HOVER)
             if hasattr(self, 'conversion_clear_btn'):
                 self.conversion_clear_btn.configure(state="normal")
             self.conversion_status.configure(
@@ -1634,7 +1904,7 @@ class UnifiedWindow:
             )
         else:
             self.initial_message_label.pack(fill="both", expand=True, padx=20, pady=20)
-            self.conversion_convert_btn.configure(state="disabled")
+            self._set_exec_btn_enabled(self.conversion_convert_btn, False, CLR_CONV_PRIMARY, CLR_CONV_HOVER)
             if hasattr(self, 'conversion_clear_btn'):
                 self.conversion_clear_btn.configure(state="disabled")
             if hasattr(self, 'conversion_delete_btn'):
@@ -1650,7 +1920,7 @@ class UnifiedWindow:
         if current_files:
             # メッセージを非表示にして、ファイル数を更新
             self.combination_list_msg.pack_forget()
-            self.combination_combine_btn.configure(state="normal")
+            self._set_exec_btn_enabled(self.combination_combine_btn, True, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
             if hasattr(self, 'combination_clear_btn'):
                 self.combination_clear_btn.configure(state="normal")
             self.combination_count_label.configure(text=f"ファイル数: {len(current_files)}")
@@ -1658,7 +1928,7 @@ class UnifiedWindow:
         else:
             # ファイルがない場合は初期メッセージを表示
             self.combination_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
-            self.combination_combine_btn.configure(state="disabled")
+            self._set_exec_btn_enabled(self.combination_combine_btn, False, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
             if hasattr(self, 'combination_clear_btn'):
                 self.combination_clear_btn.configure(state="disabled")
             if hasattr(self, 'combination_delete_btn'):
@@ -1676,7 +1946,7 @@ class UnifiedWindow:
 
         self._update_combination_display()
         
-        self.combination_combine_btn.configure(state="disabled")
+        self._set_exec_btn_enabled(self.combination_combine_btn, False, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
         self.combination_count_label.configure(text="ファイル数: 0")
         self.combination_status.configure(text="PDFファイルを追加してください")
         
@@ -1840,56 +2110,92 @@ class UnifiedWindow:
             return
         self.conversion_files.clear()
         self.conversion_draggable_list.clear_files()
+        self.conversion_retry_failed_btn.configure(state="disabled")
         self._update_conversion_display()
         self.conversion_status.configure(text="ファイルリストをクリアしました")
         logger.info("変換ファイル全クリア")
     
-    def _start_conversion(self) -> None:
+    def _start_conversion(self, files_override: Optional[List[str]] = None) -> None:
         """PDF変換開始"""
-        if not self.conversion_files:
+        files_to_convert = files_override if files_override is not None else self.conversion_files
+        if not files_to_convert:
             return
-        
-        # UIを無効化
-        self.conversion_convert_btn.configure(state="disabled")
+
+        # 再実行対象のステータス表示をリセット
+        for fp in files_to_convert:
+            self.conversion_draggable_list.set_status(fp, None)
+
+        # UIを「実行中」表示に切り替え（キャンセル可能にする）
+        self._conversion_cancel_event.clear()
+        self._set_conversion_running_ui(True)
         self.conversion_status.configure(text="変換処理中...")
         self.conversion_progress.set(0)
-        
+
         # 別スレッドで変換実行
-        thread = threading.Thread(target=self._run_conversion)
+        thread = threading.Thread(target=self._run_conversion, args=(list(files_to_convert),))
         thread.daemon = True
         thread.start()
-    
-    def _run_conversion(self) -> None:
+
+    def _retry_failed_conversion(self) -> None:
+        """失敗したファイルのみ再実行"""
+        failed_files = self.conversion_draggable_list.get_files_by_status("failed")
+        if not failed_files:
+            return
+        self._start_conversion(files_override=failed_files)
+
+    def _set_conversion_running_ui(self, running: bool) -> None:
+        """変換実行中/待機中でボタンの見た目・挙動を切り替える"""
+        if running:
+            self.conversion_convert_btn.configure(
+                text="⏹ キャンセル", command=self._cancel_conversion,
+                state="normal", fg_color=CLR_RED_TEXT, hover_color="#9B2C2C"
+            )
+            self.conversion_retry_failed_btn.configure(state="disabled")
+        else:
+            self.conversion_convert_btn.configure(text="🔄 PDF変換実行", command=self._start_conversion)
+            self._set_exec_btn_enabled(self.conversion_convert_btn, True, CLR_CONV_PRIMARY, CLR_CONV_HOVER)
+
+    def _cancel_conversion(self) -> None:
+        """変換処理のキャンセルを要求する（現在処理中のファイル完了後に停止）"""
+        self._conversion_cancel_event.set()
+        self.conversion_convert_btn.configure(state="disabled")
+        self.conversion_status.configure(text="キャンセル中...（現在のファイル完了後に停止します）")
+
+    def _run_conversion(self, files_to_convert: List[str]) -> None:
         """変換実行（別スレッド） - 順次処理でRPCエラーを回避"""
         try:
-            files_to_convert = self.conversion_files.copy()
             total_files = len(files_to_convert)
             results = []
-            
+            cancelled = False
+
             for index, file_path in enumerate(files_to_convert):
+                if self._conversion_cancel_event.is_set():
+                    cancelled = True
+                    break
+
                 # 進捗更新
                 progress = (index + 0.5) / total_files  # 処理開始時の進捗
                 status_text = f"変換中: {index + 1}/{total_files} - {Path(file_path).name}"
                 self.root.after(0, lambda p=progress, s=status_text: self._update_conversion_progress(p, s))
-                
+
                 # 単一ファイル変換（順次処理）
                 split_sheets = self.split_excel_sheets_var.get()
                 result = self.pdf_converter._convert_single_file(file_path, split_sheets, self.conversion_output_dir)
                 results.append(result)
-                
+
                 # 完了時の進捗更新
                 progress = (index + 1) / total_files
                 success_status = "● 成功" if result.success else "× 失敗"
                 status_text = f"{success_status}: {Path(file_path).name}"
                 self.root.after(0, lambda p=progress, s=status_text: self._update_conversion_progress(p, s))
-                
+
                 # COM APIリソースの適切な解放のための待機
                 import time
                 time.sleep(0.5)  # RPCエラー防止のための適切な間隔
-            
+
             # UI更新（メインスレッドで実行）
-            self.root.after(0, lambda: self._on_conversion_complete(results))
-            
+            self.root.after(0, lambda: self._on_conversion_complete(results, cancelled))
+
         except Exception as e:
             logger.error(f"変換処理中のエラー: {str(e)}", exc_info=True)
             self.root.after(0, lambda: error_handler.handle_error(
@@ -1903,49 +2209,84 @@ class UnifiedWindow:
         self.conversion_status.configure(text=status)
         self.root.update_idletasks()  # UI即座更新
     
-    def _show_and_open_results(self, title: str, message: str, output_paths: List[str]):
-        """処理完了メッセージとフォルダ表示"""
-        messagebox.showinfo(title, message)
-        if output_paths:
-            folder_to_open = str(Path(output_paths[0]).parent)
-            self._open_folder(folder_to_open)
 
-
-    def _on_conversion_complete(self, results) -> None:
+    def _on_conversion_complete(self, results, cancelled: bool = False) -> None:
         """変換完了処理"""
         successful = [r for r in results if r.success]
         failed = [r for r in results if not r.success]
-        
+
+        # 各行に成功/失敗ステータスを表示（リストは自動クリアしない。未処理分は未表示のまま）
+        for r in results:
+            self.conversion_draggable_list.set_status(
+                r.source_path, "success" if r.success else "failed"
+            )
+
+        if cancelled:
+            self.conversion_status.configure(
+                text=f"キャンセルしました（処理済み {len(results)}件: 成功 {len(successful)}件 / 失敗 {len(failed)}件）"
+            )
+            self.conversion_banner.show(
+                f"変換をキャンセルしました（処理済み {len(results)}件: 成功 {len(successful)}件 / 失敗 {len(failed)}件）",
+                success=(len(failed) == 0), buttons=[]
+            )
+            self.conversion_retry_failed_btn.configure(state="normal" if failed else "disabled")
+            self._set_conversion_running_ui(False)
+            return
+
         self.conversion_progress.set(1.0)
-        
+
         if successful:
-            message = f"変換が完了しました。\n\n成功: {len(successful)}件\n失敗: {len(failed)}件"
             self.conversion_status.configure(text=f"変換完了: 成功 {len(successful)}個, 失敗 {len(failed)}個")
-            
+
             all_successful_paths = [path for r in successful for path in r.target_paths]
-            
-            def open_folder_callback():
-                if all_successful_paths:
-                    self._open_folder(str(Path(all_successful_paths[0]).parent))
+            folder = str(Path(all_successful_paths[0]).parent) if all_successful_paths else None
 
-            open_folder_callback()
+            if folder and self.auto_open_output_folder_var.get():
+                self._open_folder(folder)
 
-            messagebox.showinfo("変換完了", message)
+            buttons = []
+            if folder:
+                buttons.append(("📂 フォルダを開く", lambda f=folder: self._open_folder(f)))
+            buttons.append(("→ 資料NO挿入タブへ送る",
+                             lambda p=all_successful_paths: self._send_files_to_document_tab(p)))
+            buttons.append(("→ 結合タブへ送る",
+                             lambda p=all_successful_paths: self._send_files_to_combination_tab(p)))
+
+            self.conversion_banner.show(
+                f"変換が完了しました（成功 {len(successful)}件 / 失敗 {len(failed)}件）",
+                success=(len(failed) == 0), buttons=buttons
+            )
 
         else:
             message = f"変換に失敗しました。\n\n失敗: {len(failed)}件"
             self.conversion_status.configure(text=f"変換失敗: {len(failed)}個のファイルで問題が発生")
             messagebox.showerror("変換失敗", message)
-        
-        # ファイルリストをクリア
-        self._clear_all_conversion(force=True)
 
-        # UI有効化
-        self.conversion_convert_btn.configure(state="normal")
-    
+        if failed:
+            self.conversion_retry_failed_btn.configure(state="normal")
+            FailureDetailDialog(
+                self.root, "変換失敗の詳細",
+                [(r.source_path, r.error_message) for r in failed]
+            )
+        else:
+            self.conversion_retry_failed_btn.configure(state="disabled")
+
+        # UI有効化（リストは保持し、内容変更・設定変更後の再実行に備える）
+        self._set_conversion_running_ui(False)
+
     def _start_combination(self) -> None:
         """PDF結合開始"""
         if not self.combination_files:
+            return
+
+        add_blank_page = self.add_blank_page_var.get()
+        add_page_numbers = self.add_page_number_var.get()
+
+        try:
+            start_page = int(self.start_page_var.get())
+            start_number = int(self.start_number_var.get())
+        except ValueError:
+            messagebox.showwarning("入力エラー", "開始ページと開始番号には数字を入力してください。")
             return
 
         # 出力先フォルダが未設定の場合は最初のファイルの親フォルダを使用
@@ -1958,14 +2299,10 @@ class UnifiedWindow:
         output_path = OutputManager.get_unique_output_path(out_dir, filename)
 
         # UIを無効化
-        self.combination_combine_btn.configure(state="disabled")
+        self._set_exec_btn_enabled(self.combination_combine_btn, False, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
         self.combination_status.configure(text="結合処理中...")
         self.combination_progress.set(0)
 
-        add_blank_page = self.add_blank_page_var.get()
-        add_page_numbers = self.add_page_number_var.get()
-        start_page = int(self.start_page_var.get())
-        start_number = int(self.start_number_var.get())
         pn_binding_compat = self.combine_pn_binding_compat_var.get() if add_page_numbers else False
 
         # 別スレッドで結合実行
@@ -2004,36 +2341,48 @@ class UnifiedWindow:
         """結合完了処理"""
         self.combination_progress.set(1.0)
 
+        # 各ファイルの処理結果をリストに反映（リストは自動クリアしない）
+        if result.success or result.failed_files:
+            failed_paths = {p for p, _ in result.failed_files}
+            for fp in self.combination_files:
+                self.combination_draggable_list.set_status(
+                    fp, "failed" if fp in failed_paths else "success"
+                )
+
         if result.success:
-            message = (f"PDF結合が完了しました！\n\n"
-                       f"• 結合ファイル数: {len(result.processed_files)}個\n"
-                       f"• 総ページ数: {result.total_pages}ページ\n"
-                       f"• 出力ファイル: {Path(result.output_path).name}\n"
-                       f"• 処理時間: {result.processing_time:.1f}秒")
             self.combination_status.configure(
                 text=f"結合完了: {result.total_pages}ページ ({len(result.processed_files)}ファイル)"
             )
-            self._show_and_open_results("PDF結合完了", message, [result.output_path])
+
+            folder = str(Path(result.output_path).parent)
+            if self.auto_open_output_folder_var.get():
+                self._open_folder(folder)
+
+            self.combination_banner.show(
+                f"PDF結合が完了しました（{Path(result.output_path).name} / {result.total_pages}ページ）",
+                success=(len(result.failed_files) == 0),
+                buttons=[("📂 フォルダを開く", lambda f=folder: self._open_folder(f))]
+            )
         else:
             message = f"結合に失敗しました。\n\nエラー: {result.error_message}"
             self.combination_status.configure(text=f"結合失敗: {result.error_message}")
             messagebox.showerror("結合失敗", message)
 
-        # ファイルリストをクリア
-        self._clear_combination_files()
+        if result.failed_files:
+            FailureDetailDialog(self.root, "PDF結合失敗の詳細", result.failed_files)
 
-        # UI有効化
-        self.combination_combine_btn.configure(state="normal")
+        # UI有効化（リストは保持し、設定変更後の再実行に備える）
+        self._set_exec_btn_enabled(self.combination_combine_btn, True, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
     
     def _reset_conversion_ui(self) -> None:
         """変換UI リセット"""
-        self.conversion_convert_btn.configure(state="normal")
+        self._set_conversion_running_ui(False)
         self.conversion_progress.set(0)
         self.conversion_status.configure(text="エラーが発生しました")
     
     def _reset_combination_ui(self) -> None:
         """結合UI リセット"""
-        self.combination_combine_btn.configure(state="normal")
+        self._set_exec_btn_enabled(self.combination_combine_btn, True, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
         self.combination_progress.set(0)
         self.combination_status.configure(text="エラーが発生しました")
     
@@ -2053,6 +2402,11 @@ class UnifiedWindow:
     def _on_closing(self) -> None:
         """アプリケーション終了処理"""
         logger.info("アプリケーション終了処理開始")
+
+        try:
+            self._save_user_settings()
+        except Exception as e:
+            logger.warning(f"設定の保存に失敗しました: {e}")
 
         try:
             # PDF変換器のクリーンアップ
@@ -2101,6 +2455,9 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
         ).pack(pady=(10, 5))
 
+        self.pagenumber_banner = CompletionBanner(self.pagenumber_tab, CLR_PN_PRIMARY, CLR_PN_HOVER)
+        self.pagenumber_banner.pack(fill="x", padx=15, pady=(0, 4))
+
         # ── ツールバー ──
         pn_toolbar = ctk.CTkFrame(self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
                                   border_width=1, border_color=CLR_BORDER, corner_radius=6)
@@ -2132,16 +2489,17 @@ class UnifiedWindow:
         pn_out_frame.pack(fill="x", padx=15, pady=(0, 4))
         ctk.CTkLabel(pn_out_frame, text="出力先:",
                      font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
-        self.pagenumber_output_dir_label = ctk.CTkLabel(
-            pn_out_frame, text="（元ファイルと同じフォルダ）",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
-        )
-        self.pagenumber_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
         ctk.CTkButton(
             pn_out_frame, text="📂 変更", command=self._change_pagenumber_output_dir,
             height=26, width=80, fg_color=CLR_PN_PRIMARY, hover_color=CLR_PN_HOVER,
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         ).pack(side="right", padx=(4, 8), pady=5)
+        self.pagenumber_output_dir_label = ctk.CTkLabel(
+            pn_out_frame, text="（元ファイルと同じフォルダ）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
+        )
+        self.pagenumber_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
+        self._attach_tooltip(self.pagenumber_output_dir_label, lambda: self.pagenumber_output_dir)
 
         # ── ファイル選択エリア ──
         self.pn_drop_frame = ctk.CTkFrame(
@@ -2169,6 +2527,10 @@ class UnifiedWindow:
             text_color=CLR_DARK_TEXT
         )
         self.pn_file_label.pack(side="left", padx=12, pady=8)
+        self._attach_tooltip(
+            self.pn_file_label,
+            lambda: self.pagenumber_files[0] if self.pagenumber_files else ""
+        )
         self.pn_clear_file_btn = ctk.CTkButton(
             self.pn_file_frame, text="✕", width=26, height=26,
             fg_color="transparent", hover_color=CLR_RED_LIGHT,
@@ -2192,9 +2554,11 @@ class UnifiedWindow:
         ).pack(side="left", padx=(0, 4))
 
         self.pn_start_page_var = ctk.StringVar(value="1")
-        ctk.CTkEntry(opt_row, textvariable=self.pn_start_page_var, width=52,
+        pn_start_page_entry = ctk.CTkEntry(opt_row, textvariable=self.pn_start_page_var, width=52,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        ).pack(side="left")
+        )
+        pn_start_page_entry.pack(side="left")
+        self._make_digits_only(pn_start_page_entry)
 
         ctk.CTkLabel(opt_row, text="ページ",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
@@ -2205,9 +2569,11 @@ class UnifiedWindow:
         ).pack(side="left", padx=(0, 4))
 
         self.pn_start_number_var = ctk.StringVar(value="1")
-        ctk.CTkEntry(opt_row, textvariable=self.pn_start_number_var, width=52,
+        pn_start_number_entry = ctk.CTkEntry(opt_row, textvariable=self.pn_start_number_var, width=52,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14)
-        ).pack(side="left")
+        )
+        pn_start_number_entry.pack(side="left")
+        self._make_digits_only(pn_start_number_entry)
 
         # フォント選択
         pn_font_row = ctk.CTkFrame(opt_frame, fg_color="transparent")
@@ -2262,8 +2628,8 @@ class UnifiedWindow:
             text="📄 ページ番号挿入実行",
             command=self._start_pagenumber_insertion,
             height=40, state="disabled",
-            fg_color=CLR_PN_PRIMARY, hover_color=CLR_PN_HOVER,
-            text_color="white", text_color_disabled="white",
+            fg_color=CLR_DISABLED_BG, hover_color=CLR_DISABLED_BG,
+            text_color="white", text_color_disabled=CLR_DISABLED_TEXT,
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.pn_execute_btn.pack(side="left")
@@ -2293,6 +2659,10 @@ class UnifiedWindow:
         pdf_files = [p for p in paths if Path(p).suffix.lower() == '.pdf' and Path(p).is_file()]
         if pdf_files:
             self._set_pagenumber_file(pdf_files[0])
+            if len(pdf_files) > 1:
+                self.pn_status.configure(
+                    text=f"このタブは1ファイルのみ対応です。先頭の「{Path(pdf_files[0]).name}」を使用しました"
+                )
 
     def _set_pagenumber_file(self, path: str) -> None:
         self.pagenumber_files = [path]
@@ -2302,7 +2672,7 @@ class UnifiedWindow:
         self.pn_drop_label.pack_forget()
         self.pn_file_frame.pack(fill="x", padx=12, pady=12)
         self.pn_clear_btn.configure(state="normal")
-        self.pn_execute_btn.configure(state="normal")
+        self._set_exec_btn_enabled(self.pn_execute_btn, True, CLR_PN_PRIMARY, CLR_PN_HOVER)
         self.pn_preview_btn.configure(state="normal")
         self.pn_status.configure(text=f"選択済み: {name}")
         # 出力先未設定の場合は元ファイルの親フォルダを自動設定
@@ -2315,7 +2685,7 @@ class UnifiedWindow:
         self.pn_file_frame.pack_forget()
         self.pn_drop_label.pack(expand=True)
         self.pn_clear_btn.configure(state="disabled")
-        self.pn_execute_btn.configure(state="disabled")
+        self._set_exec_btn_enabled(self.pn_execute_btn, False, CLR_PN_PRIMARY, CLR_PN_HOVER)
         self.pn_preview_btn.configure(state="disabled")
         self.pn_status.configure(text="PDFファイルを選択してください")
         self.pn_progress.set(0)
@@ -2334,19 +2704,21 @@ class UnifiedWindow:
 
         pdf_path = self.pagenumber_files[0]
         out_dir_disp = self.pagenumber_output_dir or str(Path(pdf_path).parent)
-        confirmed = messagebox.askyesno(
-            "ページ番号挿入の確認",
+        confirmed = confirm_with_skip(
+            self.root, "ページ番号挿入の確認",
             f"以下の内容でページ番号を挿入しますか？\n\n"
             f"• 対象ファイル: {Path(pdf_path).name}\n"
             f"• 開始ページ: {start_page}ページ目から\n"
             f"• 開始番号: {start_number}\n"
             f"• 出力先: {out_dir_disp}\n\n"
-            f"元ファイルはそのまま残ります。"
+            f"元ファイルはそのまま残ります。",
+            skip_getter=lambda: self.skip_confirm_pagenumber,
+            skip_setter=lambda v: setattr(self, "skip_confirm_pagenumber", v)
         )
         if not confirmed:
             return
 
-        self.pn_execute_btn.configure(state="disabled")
+        self._set_exec_btn_enabled(self.pn_execute_btn, False, CLR_PN_PRIMARY, CLR_PN_HOVER)
         self.pn_preview_btn.configure(state="disabled")
         self.pn_status.configure(text="処理中...")
         self.pn_progress.set(0)
@@ -2413,7 +2785,7 @@ class UnifiedWindow:
             self.root.after(0, lambda: error_handler.handle_error(
                 e, ErrorSeverity.CRITICAL, "ページ番号挿入"
             ))
-            self.root.after(0, lambda: self.pn_execute_btn.configure(state="normal"))
+            self.root.after(0, lambda: self._set_exec_btn_enabled(self.pn_execute_btn, True, CLR_PN_PRIMARY, CLR_PN_HOVER))
             self.root.after(0, lambda: self.pn_preview_btn.configure(
                 state="normal" if self.pagenumber_files else "disabled"
             ))
@@ -2421,17 +2793,22 @@ class UnifiedWindow:
     def _on_pagenumber_complete(self, result) -> None:
         self.pn_progress.set(1.0)
         if result.success:
-            msg = (f"ページ番号挿入が完了しました！\n\n"
-                   f"• 総ページ数: {result.total_pages}ページ\n"
-                   f"• 出力ファイル: {Path(result.output_path).name}\n"
-                   f"• 処理時間: {result.processing_time:.1f}秒")
             self.pn_status.configure(text=f"完了: {result.total_pages}ページ")
-            self._show_and_open_results("ページ番号挿入完了", msg, [result.output_path])
+
+            folder = str(Path(result.output_path).parent)
+            if self.auto_open_output_folder_var.get():
+                self._open_folder(folder)
+
+            self.pagenumber_banner.show(
+                f"ページ番号挿入が完了しました（{Path(result.output_path).name} / {result.total_pages}ページ）",
+                success=True,
+                buttons=[("📂 フォルダを開く", lambda f=folder: self._open_folder(f))]
+            )
             self._clear_pagenumber_file()
         else:
             messagebox.showerror("エラー", f"処理に失敗しました。\n\n{result.error_message}")
             self.pn_status.configure(text="エラーが発生しました")
-            self.pn_execute_btn.configure(state="normal")
+            self._set_exec_btn_enabled(self.pn_execute_btn, True, CLR_PN_PRIMARY, CLR_PN_HOVER)
             self.pn_preview_btn.configure(
                 state="normal" if self.pagenumber_files else "disabled"
             )
@@ -2476,6 +2853,77 @@ class UnifiedWindow:
 
         render_fn = lambda: render_page_number_preview(pdf_path, page_number_text, binding_compat)
         PDFPreviewDialog(self.root, f"プレビュー（ページ番号: {page_number_text}）", render_fn)
+
+    # ════════════════════════════════════════════════════════════
+    # 設定の永続化
+    # ════════════════════════════════════════════════════════════
+
+    def _load_user_settings(self) -> None:
+        """前回終了時の設定を復元する"""
+        s = load_settings()
+        self._apply_settings(s)
+
+    def _apply_settings(self, s: dict) -> None:
+        """設定辞書の内容をUIへ反映する"""
+        self.conversion_output_dir = s.get("conversion_output_dir", "")
+        self.document_output_dir = s.get("document_output_dir", "")
+        self.combination_output_dir = s.get("combination_output_dir", "")
+        self.pagenumber_output_dir = s.get("pagenumber_output_dir", "")
+        self._update_conversion_output_dir_label()
+        self._update_document_output_dir_label()
+        self._update_combination_output_dir_label()
+        self._update_pagenumber_output_dir_label()
+
+        self.split_excel_sheets_var.set(s.get("split_excel_sheets", False))
+        self.doc_font_var.set(s.get("doc_font", "メイリオ"))
+        self.doc_font_size_var.set(s.get("doc_font_size", "20"))
+        self.rename_file_var.set(s.get("rename_file", False))
+        self.a3_compat_var.set(s.get("a3_compat", False))
+        self.insert_all_pages_var.set(s.get("insert_all_pages", False))
+        self.add_blank_page_var.set(s.get("add_blank_page", False))
+        self.add_page_number_var.set(s.get("add_page_number", False))
+        self.combine_pn_binding_compat_var.set(s.get("combine_pn_binding_compat", False))
+        self.pn_font_var.set(s.get("pn_font", "メイリオ"))
+        self.pn_binding_compat_var.set(s.get("pn_binding_compat", False))
+        self.auto_open_output_folder_var.set(s.get("auto_open_output_folder", True))
+        self.skip_confirm_document_number = s.get("skip_confirm_document_number", False)
+        self.skip_confirm_pagenumber = s.get("skip_confirm_pagenumber", False)
+        self._toggle_page_number_options()
+
+    def _collect_current_settings(self) -> dict:
+        """現在のUI状態から設定辞書を作成する"""
+        return {
+            "conversion_output_dir": self.conversion_output_dir,
+            "document_output_dir": self.document_output_dir,
+            "combination_output_dir": self.combination_output_dir,
+            "pagenumber_output_dir": self.pagenumber_output_dir,
+            "split_excel_sheets": self.split_excel_sheets_var.get(),
+            "doc_font": self.doc_font_var.get(),
+            "doc_font_size": self.doc_font_size_var.get(),
+            "rename_file": self.rename_file_var.get(),
+            "a3_compat": self.a3_compat_var.get(),
+            "insert_all_pages": self.insert_all_pages_var.get(),
+            "add_blank_page": self.add_blank_page_var.get(),
+            "add_page_number": self.add_page_number_var.get(),
+            "combine_pn_binding_compat": self.combine_pn_binding_compat_var.get(),
+            "pn_font": self.pn_font_var.get(),
+            "pn_binding_compat": self.pn_binding_compat_var.get(),
+            "auto_open_output_folder": self.auto_open_output_folder_var.get(),
+            "skip_confirm_document_number": self.skip_confirm_document_number,
+            "skip_confirm_pagenumber": self.skip_confirm_pagenumber,
+        }
+
+    def _save_user_settings(self) -> None:
+        """現在の設定を保存する"""
+        save_settings(self._collect_current_settings())
+
+    def _reset_settings_to_default(self) -> None:
+        """設定をデフォルトに戻す"""
+        if not messagebox.askyesno("設定リセット", "すべての設定をデフォルトに戻しますか？\n（ファイルリストは変更されません）"):
+            return
+        self._apply_settings(DEFAULT_SETTINGS)
+        save_settings(DEFAULT_SETTINGS.copy())
+        messagebox.showinfo("設定リセット", "設定をデフォルトに戻しました。")
 
     def _open_help(self) -> None:
         """ヘルプダイアログを開く"""

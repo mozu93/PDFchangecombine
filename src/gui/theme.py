@@ -35,10 +35,14 @@ CLR_TOOLBAR_BG    = "#F7FAFC"   # ツールバー背景
 CLR_BORDER        = "#E2E8F0"   # 通常ボーダー
 CLR_RED_LIGHT     = "#FED7D7"   # ×ボタン背景
 CLR_RED_TEXT      = "#C53030"   # ×ボタン文字・削除ボタン
-CLR_GRAY_TEXT     = "#718096"   # 補助テキスト
+CLR_GRAY_TEXT     = "#5A6B7F"   # 補助テキスト（#F7FAFC背景でWCAG AA 4.5:1以上を確保）
 CLR_DARK_TEXT     = "#2D3748"   # メインテキスト
 CLR_LIST_HEADER   = "#EBF8FF"   # リストヘッダー背景
 CLR_WHITE         = "white"
+
+# ── 無効状態ボタン配色（実行ボタン等がdisabled時に有効時と見分けがつくように） ──
+CLR_DISABLED_BG   = "#CBD5E0"   # 無効ボタン背景（グレー）
+CLR_DISABLED_TEXT = "#A0AEC0"   # 無効ボタン文字
 
 # ── バッジ定義 ───────────────────────────────────────────────
 _BADGE_MAP: dict[str, tuple[str, str]] = {

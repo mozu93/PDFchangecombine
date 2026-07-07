@@ -60,7 +60,9 @@ MAX_IDLE_MEMORY_MB = 200
 MAX_CONCURRENT_FILES = 100
 
 # UI設定
-UI_THEME = "System"  # CustomTkinter テーマ
+# 現状のテーマ定数はライト固定色のため、"System"でOSがダークモードの場合に
+# 配色が破綻する（外枠のみ暗色化し、内部は白基調のまま）。当面はLightに固定する。
+UI_THEME = "Light"  # CustomTkinter テーマ
 UI_COLOR_THEME = "blue"  # カラーテーマ
 
 # ファイルサイズ制限 (MB)
