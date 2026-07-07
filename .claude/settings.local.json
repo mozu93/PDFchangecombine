@@ -1,10 +1,21 @@
 {
-  "disabledMcpjsonServers": [
-    "serena"
-  ],
   "permissions": {
     "allow": [
-      "Skill(sc:load)"
+      "Skill(sc:load)",
+      "Bash(git add *)",
+      "Bash(GIT_EDITOR=true git commit -m ' *)",
+      "Bash(git rebase *)",
+      "Bash(GIT_EDITOR=true cat)",
+      "Bash(git status *)",
+      "Bash(git checkout *)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(git tag *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git merge *)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "serena"
+  ]
 }
