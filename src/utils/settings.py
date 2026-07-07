@@ -21,10 +21,6 @@ SETTINGS_PATH = _SETTINGS_DIR / 'settings.json'
 
 # 各設定のデフォルト値（「デフォルトに戻す」で使用）
 DEFAULT_SETTINGS: Dict[str, Any] = {
-    "conversion_output_dir": "",
-    "document_output_dir": "",
-    "combination_output_dir": "",
-    "pagenumber_output_dir": "",
     "split_excel_sheets": False,
     "doc_font": "メイリオ",
     "doc_font_size": "20",

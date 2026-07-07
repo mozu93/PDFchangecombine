@@ -2865,10 +2865,6 @@ class UnifiedWindow:
 
     def _apply_settings(self, s: dict) -> None:
         """設定辞書の内容をUIへ反映する"""
-        self.conversion_output_dir = s.get("conversion_output_dir", "")
-        self.document_output_dir = s.get("document_output_dir", "")
-        self.combination_output_dir = s.get("combination_output_dir", "")
-        self.pagenumber_output_dir = s.get("pagenumber_output_dir", "")
         self._update_conversion_output_dir_label()
         self._update_document_output_dir_label()
         self._update_combination_output_dir_label()
@@ -2893,10 +2889,6 @@ class UnifiedWindow:
     def _collect_current_settings(self) -> dict:
         """現在のUI状態から設定辞書を作成する"""
         return {
-            "conversion_output_dir": self.conversion_output_dir,
-            "document_output_dir": self.document_output_dir,
-            "combination_output_dir": self.combination_output_dir,
-            "pagenumber_output_dir": self.pagenumber_output_dir,
             "split_excel_sheets": self.split_excel_sheets_var.get(),
             "doc_font": self.doc_font_var.get(),
             "doc_font_size": self.doc_font_size_var.get(),
