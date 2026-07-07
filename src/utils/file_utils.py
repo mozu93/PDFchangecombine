@@ -4,16 +4,14 @@
 """
 
 import os
-import shutil
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Set
 from ..config import (
     SUPPORTED_OFFICE_EXTENSIONS,
     SUPPORTED_IMAGE_EXTENSIONS,
     SUPPORTED_PDF_EXTENSIONS,
     ALL_SUPPORTED_EXTENSIONS,
     OUTPUT_FOLDER_NAME,
-    SOURCE_ARCHIVE_FOLDER_NAME,
     MAX_FILE_SIZE_MB
 )
 from .logger import logger
@@ -349,33 +347,3 @@ class OutputManager:
         if not files:
             return ""
         return str(Path(files[0]).parent / subfolder_name)
-
-    @staticmethod
-    def archive_source_file(source_file_path: str) -> Optional[str]:
-        """
-        処理済みの元ファイルを、元ファイルと同じフォルダ内の「変換元」フォルダへ退避する。
-        「変換元」フォルダが既に存在する場合は作成しない。
-        退避先に同名ファイルが既に存在する場合は上書きせず連番を付与する。
-
-        Args:
-            source_file_path: 退避対象の元ファイルパス
-
-        Returns:
-            Optional[str]: 退避後のファイルパス（失敗時はNone）
-        """
-        try:
-            source_path = Path(source_file_path)
-            if not source_path.exists():
-                logger.warning(f"退避対象の元ファイルが存在しません: {source_file_path}")
-                return None
-
-            archive_dir = source_path.parent / SOURCE_ARCHIVE_FOLDER_NAME
-            archive_dir.mkdir(exist_ok=True)
-
-            archive_path = OutputManager.get_unique_output_path(str(archive_dir), source_path.name)
-            shutil.move(str(source_path), archive_path)
-            logger.info(f"元ファイルを退避: {source_path.name} → {archive_path}")
-            return archive_path
-        except Exception as e:
-            logger.warning(f"元ファイルの退避に失敗（処理結果には影響しません）: {source_file_path} - {e}")
-            return None

@@ -1746,7 +1746,7 @@ class UnifiedWindow:
                 f"• パターン: {preview}\n"
                 f"• 挿入ページ: {all_pages_str}\n"
                 f"• 出力先: {out_dir_disp}\n\n"
-                f"元ファイルは「変換元」フォルダへ移動されます。",
+                f"元ファイルはそのまま残ります。",
                 skip_getter=lambda: self.skip_confirm_document_number,
                 skip_setter=lambda v: setattr(self, "skip_confirm_document_number", v)
             )
@@ -2746,7 +2746,7 @@ class UnifiedWindow:
             f"• 開始ページ: {start_page}ページ目から\n"
             f"• 開始番号: {start_number}\n"
             f"• 出力先: {out_dir_disp}\n\n"
-            f"元ファイルは「変換元」フォルダへ移動されます。",
+            f"元ファイルはそのまま残ります。",
             skip_getter=lambda: self.skip_confirm_pagenumber,
             skip_setter=lambda v: setattr(self, "skip_confirm_pagenumber", v)
         )

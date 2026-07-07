@@ -316,13 +316,12 @@ class TestFunctionalIntegration(unittest.TestCase):
         )
         self.assertTrue(result.success, "連番モード失敗")
 
+        # 元ファイルは移動されず元の場所に残ること
+        for pdf_path in pdf_files:
+            self.assertTrue(Path(pdf_path).exists(), f"元ファイルが残っていません: {pdf_path}")
+        self.assertFalse((Path(self.temp_dir) / "変換元").exists(), "「変換元」フォルダが作成されています")
+
         # 2. ハイフン連番モードテスト
-        # 挿入成功時に元ファイルは「変換元」フォルダへ退避されるため作り直す
-        pdf_files = [
-            self._create_test_pdf("doc1.pdf"),
-            self._create_test_pdf("doc2.pdf"),
-            self._create_test_pdf("doc3.pdf")
-        ]
         result = self.combiner.add_sequential_document_numbers(
             pdf_paths=pdf_files,
             numbering_type="hyphen",
