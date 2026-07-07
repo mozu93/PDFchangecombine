@@ -1732,7 +1732,11 @@ class UnifiedWindow:
 
             # 確認メッセージ
             all_pages_str = "全ページ" if self.insert_all_pages_var.get() else "表紙（1ページ目）のみ"
-            out_dir_disp = self.document_output_dir or "（元ファイルと同じフォルダ）"
+            out_dir = self._prepare_output_dir(
+                self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME)
+            if not out_dir:
+                return
+            out_dir_disp = out_dir
             result = confirm_with_skip(
                 self.root, "挿入の確認",
                 f"以下の内容で挿入を実行しますか？\n\n"
@@ -1761,7 +1765,7 @@ class UnifiedWindow:
             insert_all_pages = self.insert_all_pages_var.get()
             selected_font = self.doc_font_var.get()
             doc_font_size = int(self.doc_font_size_var.get())
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages, doc_font_size))
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages, doc_font_size, out_dir))
             thread.daemon = True
             thread.start()
 
@@ -1773,7 +1777,7 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False, doc_font_size: int = 20) -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False, doc_font_size: int = 20, out_dir: str = "") -> None:
         """挿入実行（別スレッド）"""
         try:
             self.pdf_combiner.set_user_font(selected_font)
@@ -1793,7 +1797,7 @@ class UnifiedWindow:
                     a3_portrait_compat=a3_portrait_compat,
                     insert_all_pages=insert_all_pages,
                     doc_font_size=doc_font_size,
-                    output_dir=self.document_output_dir,
+                    output_dir=out_dir,
                     progress_callback=progress_callback
                 )
             else:
@@ -1812,7 +1816,7 @@ class UnifiedWindow:
 
                 result = self.pdf_combiner.add_sequential_document_numbers(
                     pdf_paths=self.document_number_files.copy(),
-                    output_dir=self.document_output_dir,
+                    output_dir=out_dir,
                     numbering_type=internal_type,
                     start_number=start_number,
                     prefix_number=prefix_number,
@@ -2027,6 +2031,20 @@ class UnifiedWindow:
             return path
         return "..." + path[-(max_len - 3):]
 
+    def _prepare_output_dir(self, override: str, files: List[str], subfolder_name: str) -> Optional[str]:
+        """実行直前に出力先を解決し、フォルダを作成して返す。作成失敗時は None"""
+        out_dir = OutputManager.resolve_output_dir(override, files, subfolder_name)
+        if not out_dir:
+            return None
+        try:
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            error_handler.handle_error(
+                e, ErrorSeverity.WARNING, "出力先フォルダ作成",
+                f"出力先フォルダを作成できませんでした:\n{out_dir}")
+            return None
+        return out_dir
+
     # ── 変換タブ ─────────────────────────────────────────────────
     def _change_conversion_output_dir(self) -> None:
         d = fd.askdirectory(title="変換ファイルの出力先フォルダを選択")
@@ -2128,6 +2146,11 @@ class UnifiedWindow:
         if not files_to_convert:
             return
 
+        out_dir = self._prepare_output_dir(
+            self.conversion_output_dir, files_to_convert, CONVERSION_OUTPUT_FOLDER_NAME)
+        if not out_dir:
+            return
+
         # 再実行対象のステータス表示をリセット
         for fp in files_to_convert:
             self.conversion_draggable_list.set_status(fp, None)
@@ -2139,7 +2162,7 @@ class UnifiedWindow:
         self.conversion_progress.set(0)
 
         # 別スレッドで変換実行
-        thread = threading.Thread(target=self._run_conversion, args=(list(files_to_convert),))
+        thread = threading.Thread(target=self._run_conversion, args=(list(files_to_convert), out_dir))
         thread.daemon = True
         thread.start()
 
@@ -2168,7 +2191,7 @@ class UnifiedWindow:
         self.conversion_convert_btn.configure(state="disabled")
         self.conversion_status.configure(text="キャンセル中...（現在のファイル完了後に停止します）")
 
-    def _run_conversion(self, files_to_convert: List[str]) -> None:
+    def _run_conversion(self, files_to_convert: List[str], out_dir: str) -> None:
         """変換実行（別スレッド） - 順次処理でRPCエラーを回避"""
         try:
             total_files = len(files_to_convert)
@@ -2187,7 +2210,7 @@ class UnifiedWindow:
 
                 # 単一ファイル変換（順次処理）
                 split_sheets = self.split_excel_sheets_var.get()
-                result = self.pdf_converter._convert_single_file(file_path, split_sheets, self.conversion_output_dir)
+                result = self.pdf_converter._convert_single_file(file_path, split_sheets, out_dir)
                 results.append(result)
 
                 # 完了時の進捗更新
@@ -2296,13 +2319,14 @@ class UnifiedWindow:
             messagebox.showwarning("入力エラー", "開始ページと開始番号には数字を入力してください。")
             return
 
-        # 出力先フォルダが未設定の場合は最初のファイルの親フォルダを使用
-        out_dir = self.combination_output_dir or str(Path(self.combination_files[0]).parent)
+        # 出力先を解決（未指定なら 先頭ファイルの親フォルダ\PDF結合済）
+        out_dir = self._prepare_output_dir(
+            self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME)
+        if not out_dir:
+            return
 
-        # タイムスタンプ付きファイル名を自動生成
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"結合_{timestamp}.pdf"
+        # 先頭ファイル名から出力ファイル名を生成（同名があれば連番付与）
+        filename = f"【結合】{Path(self.combination_files[0]).stem}.pdf"
         output_path = OutputManager.get_unique_output_path(out_dir, filename)
 
         # UIを無効化
@@ -2710,7 +2734,11 @@ class UnifiedWindow:
             return
 
         pdf_path = self.pagenumber_files[0]
-        out_dir_disp = self.pagenumber_output_dir or str(Path(pdf_path).parent)
+        out_dir = self._prepare_output_dir(
+            self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME)
+        if not out_dir:
+            return
+        out_dir_disp = out_dir
         confirmed = confirm_with_skip(
             self.root, "ページ番号挿入の確認",
             f"以下の内容でページ番号を挿入しますか？\n\n"
@@ -2734,11 +2762,11 @@ class UnifiedWindow:
         selected_font = self.pn_font_var.get()
         threading.Thread(
             target=self._run_pagenumber_insertion,
-            args=(pdf_path, start_page, start_number, binding_compat, selected_font),
+            args=(pdf_path, start_page, start_number, binding_compat, selected_font, out_dir),
             daemon=True
         ).start()
 
-    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False, selected_font: str = "メイリオ") -> None:
+    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False, selected_font: str = "メイリオ", out_dir: str = "") -> None:
         tmp_path = None
         try:
             self.pdf_combiner.set_user_font(selected_font)
@@ -2766,7 +2794,7 @@ class UnifiedWindow:
 
             if result.success:
                 # 出力先ディレクトリを決定（未設定なら元ファイルと同じフォルダ）
-                effective_out_dir = self.pagenumber_output_dir or str(pdf_path_obj.parent)
+                effective_out_dir = out_dir or str(pdf_path_obj.parent)
                 Path(effective_out_dir).mkdir(parents=True, exist_ok=True)
                 output_path = OutputManager.get_unique_output_path(effective_out_dir, pdf_path_obj.name)
                 # 一時ファイルを出力先へ移動（元ファイルは上書きしない）
