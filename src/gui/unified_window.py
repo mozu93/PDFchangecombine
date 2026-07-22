@@ -1016,6 +1016,18 @@ class UnifiedWindow:
             progress_color=CLR_DOC_PRIMARY
         ).pack(side="left")
 
+        # 行6: 資料番号枠内の背景
+        row6 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row6.pack(fill="x", padx=8, pady=(0, 5))
+
+        self.doc_white_background_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            row6, text="資料番号の枠内を白色にする（オフ: 透明）",
+            variable=self.doc_white_background_var,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            progress_color=CLR_DOC_PRIMARY
+        ).pack(side="left")
+
         # ── ファイルリスト（残りのスペースを占有） ──
         self.document_draggable_list = DraggableFileList(
             self.document_number_tab,
@@ -1732,6 +1744,7 @@ class UnifiedWindow:
 
             # 確認メッセージ
             all_pages_str = "全ページ" if self.insert_all_pages_var.get() else "表紙（1ページ目）のみ"
+            background_str = "白色" if self.doc_white_background_var.get() else "透明"
             out_dir = self._prepare_output_dir(
                 self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME)
             if not out_dir:
@@ -1745,6 +1758,7 @@ class UnifiedWindow:
                 f"• 番号方式: {numbering_type}\n"
                 f"• パターン: {preview}\n"
                 f"• 挿入ページ: {all_pages_str}\n"
+                f"• 枠内の背景: {background_str}\n"
                 f"• 出力先: {out_dir_disp}\n\n"
                 f"元ファイルはそのまま残ります。",
                 skip_getter=lambda: self.skip_confirm_document_number,
@@ -1765,7 +1779,8 @@ class UnifiedWindow:
             insert_all_pages = self.insert_all_pages_var.get()
             selected_font = self.doc_font_var.get()
             doc_font_size = int(self.doc_font_size_var.get())
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages, doc_font_size, out_dir))
+            white_background = self.doc_white_background_var.get()
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages, doc_font_size, out_dir, white_background))
             thread.daemon = True
             thread.start()
 
@@ -1777,7 +1792,7 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False, doc_font_size: int = 20, out_dir: str = "") -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False, doc_font_size: int = 20, out_dir: str = "", white_background: bool = False) -> None:
         """挿入実行（別スレッド）"""
         try:
             self.pdf_combiner.set_user_font(selected_font)
@@ -1798,6 +1813,7 @@ class UnifiedWindow:
                     insert_all_pages=insert_all_pages,
                     doc_font_size=doc_font_size,
                     output_dir=out_dir,
+                    white_background=white_background,
                     progress_callback=progress_callback
                 )
             else:
@@ -1825,6 +1841,7 @@ class UnifiedWindow:
                     a3_portrait_compat=a3_portrait_compat,
                     insert_all_pages=insert_all_pages,
                     doc_font_size=doc_font_size,
+                    white_background=white_background,
                     progress_callback=progress_callback
                 )
 
@@ -2871,7 +2888,8 @@ class UnifiedWindow:
             start = number_value if number_value else "1"
             doc_text = f"{prefix}{start}"
 
-        render_fn = lambda: render_doc_number_preview(pdf_path, doc_text, a3_compat)
+        white_background = self.doc_white_background_var.get()
+        render_fn = lambda: render_doc_number_preview(pdf_path, doc_text, a3_compat, white_background)
         PDFPreviewDialog(self.root, f"プレビュー（資料番号: {doc_text}）", render_fn)
 
     def _show_page_number_preview(self) -> None:
@@ -2911,6 +2929,7 @@ class UnifiedWindow:
         self.rename_file_var.set(s.get("rename_file", False))
         self.a3_compat_var.set(s.get("a3_compat", False))
         self.insert_all_pages_var.set(s.get("insert_all_pages", False))
+        self.doc_white_background_var.set(s.get("doc_white_background", False))
         self.add_blank_page_var.set(s.get("add_blank_page", False))
         self.add_page_number_var.set(s.get("add_page_number", False))
         self.combine_pn_binding_compat_var.set(s.get("combine_pn_binding_compat", False))
@@ -2930,6 +2949,7 @@ class UnifiedWindow:
             "rename_file": self.rename_file_var.get(),
             "a3_compat": self.a3_compat_var.get(),
             "insert_all_pages": self.insert_all_pages_var.get(),
+            "doc_white_background": self.doc_white_background_var.get(),
             "add_blank_page": self.add_blank_page_var.get(),
             "add_page_number": self.add_page_number_var.get(),
             "combine_pn_binding_compat": self.combine_pn_binding_compat_var.get(),

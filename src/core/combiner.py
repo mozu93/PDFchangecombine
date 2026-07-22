@@ -474,7 +474,8 @@ class PDFCombiner:
                            insert_all_pages: bool = False,
                            doc_font_size: int = 20,
                            output_dir: str = "",
-                           progress_callback: Optional[callable] = None) -> CombineResult:
+                           progress_callback: Optional[callable] = None,
+                           white_background: bool = False) -> CombineResult:
         """
         PDFファイルに資料NO挿入（各ファイル個別処理・非破壊出力）
 
@@ -518,7 +519,7 @@ class PDFCombiner:
 
                     # 資料NO挿入（非破壊・出力先フォルダに新規作成）
                     effective_output_dir = output_dir if output_dir else str(Path(pdf_path).parent)
-                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir)
+                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir, white_background)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -575,7 +576,8 @@ class PDFCombiner:
                                       a3_portrait_compat: bool = False,
                                       insert_all_pages: bool = False,
                                       doc_font_size: int = 20,
-                                      progress_callback: Optional[callable] = None) -> CombineResult:
+                                      progress_callback: Optional[callable] = None,
+                                      white_background: bool = False) -> CombineResult:
         """
         複数PDFファイルに連番で資料NO挿入
 
@@ -657,7 +659,7 @@ class PDFCombiner:
 
                     # 資料NO挿入実行（非破壊・出力先フォルダに新規作成）
                     effective_output_dir = output_dir if output_dir else str(Path(pdf_path).parent)
-                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir)
+                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir, white_background)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -758,7 +760,7 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_to_dir(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False, doc_font_size: int = 20, output_dir: str = "") -> str:
+    def _process_single_pdf_to_dir(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False, doc_font_size: int = 20, output_dir: str = "", white_background: bool = False) -> str:
         """
         単一PDFファイルに資料NO挿入（非破壊・出力先フォルダに新規作成）
 
@@ -857,6 +859,24 @@ class PDFCombiner:
                         x = page_width - text_width - margin
                         y = margin + font_size
                         rotate_param = 0
+
+                    # 元のPDF内容を隠す白背景は、文字より先に描画する。
+                    if white_background:
+                        if original_rotation == 90:
+                            bg_x, bg_y, bg_rotation = margin + font_size, margin + text_width, 90
+                        elif original_rotation == 180:
+                            bg_x, bg_y, bg_rotation = margin + text_width, page_height - margin - font_size, 180
+                        elif original_rotation == 270:
+                            bg_x, bg_y, bg_rotation = page_width - margin - font_size, page_height - margin - text_width, 270
+                        elif needs_bottom_right:
+                            rp = 4
+                            rect = fitz.Rect(x - rp, y - rp, x + font_size + rp, y + text_width + rp)
+                            page.draw_rect(rect, color=None, fill=(1, 1, 1), overlay=True)
+                            bg_x = None
+                        else:
+                            bg_x, bg_y, bg_rotation = x, y, rotate_param
+                        if bg_x is not None:
+                            self._draw_simple_rectangle(page, bg_x, bg_y, text_width, font_size, bg_rotation, fill_white=True, border=False)
 
                     # テキスト挿入（全回転角度でReportLabオーバーレイ使用）
                     try:
@@ -1211,7 +1231,8 @@ class PDFCombiner:
             return b""
 
     def _draw_simple_rectangle(self, page, x: float, y: float, text_width: float,
-                             font_size: float, rotate_param: int) -> None:
+                             font_size: float, rotate_param: int,
+                             fill_white: bool = False, border: bool = True) -> None:
         """
         シンプルな四角囲い描画（フリーズ対策版）
 
@@ -1255,7 +1276,13 @@ class PDFCombiner:
                                x + text_width + margin, y + margin)
 
             # 四角形を描画（シンプルに）
-            page.draw_rect(rect, color=(0, 0, 0), width=1.5)
+            page.draw_rect(
+                rect,
+                color=(0, 0, 0) if border else None,
+                fill=(1, 1, 1) if fill_white else None,
+                width=1.5,
+                overlay=True,
+            )
             logger.info(f"四角囲い描画完了: {rect}")
 
         except Exception as e:

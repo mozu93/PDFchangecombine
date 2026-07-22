@@ -76,6 +76,7 @@ def render_doc_number_preview(
     pdf_path: str,
     document_text: str,
     a3_portrait_compat: bool,
+    white_background: bool = False,
 ) -> Optional[Image.Image]:
     """資料番号挿入位置のプレビュー画像を生成する（フルサイズで返す）"""
     try:
@@ -116,7 +117,7 @@ def render_doc_number_preview(
             y = ph - margin - tw
 
         font = _load_jp_font(int(font_size * _RENDER_SCALE))
-        hi  = (220, 50, 50, 160)
+        hi  = (255, 255, 255, 255) if white_background else (220, 50, 50, 160)
         col = (180, 0, 0, 255)
 
         if rotate_text:

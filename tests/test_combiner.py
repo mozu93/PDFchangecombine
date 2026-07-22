@@ -223,6 +223,24 @@ class TestPDFCombiner:
             assert result.success is True
             assert len(result.processed_files) == 1
 
+    def test_document_number_white_background(self):
+        """資料番号の枠内を白色で塗りつぶせる"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_dir = Path(temp_dir) / "source"
+            output_dir = Path(temp_dir) / "output"
+            source_dir.mkdir()
+            pdf_path = _create_test_pdf(str(source_dir / "document.pdf"))
+
+            result = self.combiner.add_document_numbers(
+                [pdf_path], "", "1", output_dir=str(output_dir),
+                white_background=True,
+            )
+
+            assert result.success is True
+            with fitz.open(result.processed_files[0]) as doc:
+                drawings = doc[0].get_drawings()
+                assert any(drawing.get("fill") == (1.0, 1.0, 1.0) for drawing in drawings)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
