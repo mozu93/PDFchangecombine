@@ -241,6 +241,50 @@ class TestPDFCombiner:
                 drawings = doc[0].get_drawings()
                 assert any(drawing.get("fill") == (1.0, 1.0, 1.0) for drawing in drawings)
 
+    @pytest.mark.parametrize(
+        ("width", "height", "expected"),
+        [
+            (595.2756, 841.8898, 1.0),       # 通常のA4縦
+            (841.8898, 595.2756, 1.0),       # 通常のA4横
+            (793.6, 1122.24, 4 / 3),         # Excelの96dpi相当A4縦
+            (1122.24, 793.6, 4 / 3),         # Excelの96dpi相当A4横
+            (841.8898, 1190.5512, 1.0),      # A3は補正対象外
+        ],
+    )
+    def test_document_number_page_scale(self, width, height, expected):
+        scale = self.combiner._document_number_page_scale(width, height)
+        assert scale == pytest.approx(expected, rel=0.002)
+
+    def test_document_number_is_scaled_for_enlarged_a4_coordinates(self):
+        """4/3倍座標のA4で資料NOがA4印刷時に縮小されない"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_dir = Path(temp_dir) / "source"
+            output_dir = Path(temp_dir) / "output"
+            source_dir.mkdir()
+            pdf_path = source_dir / "enlarged_a4.pdf"
+
+            with fitz.open() as doc:
+                doc.new_page(width=793.6, height=1122.24)
+                doc.save(pdf_path)
+
+            result = self.combiner.add_document_numbers(
+                [str(pdf_path)], "", "1", doc_font_size=20,
+                output_dir=str(output_dir),
+            )
+
+            assert result.success is True
+            with fitz.open(result.processed_files[0]) as doc:
+                spans = [
+                    span
+                    for block in doc[0].get_text("dict")["blocks"]
+                    if "lines" in block
+                    for line in block["lines"]
+                    for span in line["spans"]
+                    if "資料1" in span["text"]
+                ]
+                assert len(spans) == 1
+                assert spans[0]["size"] == pytest.approx(20 * 4 / 3, rel=0.002)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -38,6 +38,10 @@ from reportlab.pdfbase.ttfonts import TTFont
 class PDFCombiner:
     """PDF結合メインクラス"""
 
+    # PDFの標準A4サイズ (72pt/inch)
+    _A4_WIDTH = 595.2756
+    _A4_HEIGHT = 841.8898
+
     def __init__(self):
         logger.info("PDFコンバイナー初期化完了")
         self._register_ms_gothic_font()
@@ -76,6 +80,26 @@ class PDFCombiner:
         except Exception as e:
             logger.warning(f"日本語フォント登録エラー: {e}。Courierで代替します")
             self.font_name = "Courier"
+
+    @classmethod
+    def _document_number_page_scale(cls, page_width: float, page_height: float) -> float:
+        """96dpi座標で作られたA4 PDF用の資料NO補正倍率を返す。
+
+        ExcelのPDF出力が、まれにA4の物理寸法を72ptではなく96pt/inch
+        相当（約4/3倍）で記録する。そのページは印刷時にA4へ縮小される
+        ため、資料NOと余白も同じ倍率で拡大して見た目を一定にする。
+        """
+        short_side, long_side = sorted((page_width, page_height))
+        width_scale = short_side / cls._A4_WIDTH
+        height_scale = long_side / cls._A4_HEIGHT
+
+        # A4と同じ縦横比で、両軸が約4/3倍の場合に限定。
+        # A3や任意の大型用紙を誤検出しないよう範囲を狭くする。
+        if (1.28 <= width_scale <= 1.38
+                and 1.28 <= height_scale <= 1.38
+                and abs(width_scale - height_scale) <= 0.02):
+            return (width_scale + height_scale) / 2
+        return 1.0
 
     # 表示名 → [(ファイルパス, 登録名, TTC判定), ...] の優先順リスト
     _FONT_MAP = {
@@ -794,13 +818,8 @@ class PDFCombiner:
                 page_indices = range(len(doc)) if insert_all_pages else [0]
 
                 # フォント設定（全ページ共通）
-                font_size = doc_font_size
+                base_font_size = doc_font_size
                 font_file = self._get_japanese_font_file()
-
-                # テキスト幅計算（日本語テキストベース・全ページ共通）
-                japanese_chars = len([c for c in document_text if ord(c) > 127])
-                ascii_chars = len(document_text) - japanese_chars
-                text_width = japanese_chars * font_size + ascii_chars * (font_size * 0.6)
 
                 for page_idx in page_indices:
                     page = doc[page_idx]
@@ -815,6 +834,19 @@ class PDFCombiner:
                     page_width = page.rect.width
                     page_height = page.rect.height
 
+                    # Excel変換でA4が96dpi相当（約4/3倍）になったPDFは、
+                    # A4印刷時の見た目を保つよう資料NO全体を同率で補正する。
+                    page_scale = self._document_number_page_scale(page_width, page_height)
+                    font_size = base_font_size * page_scale
+                    japanese_chars = len([c for c in document_text if ord(c) > 127])
+                    ascii_chars = len(document_text) - japanese_chars
+                    text_width = japanese_chars * font_size + ascii_chars * (font_size * 0.6)
+                    if page_scale != 1.0:
+                        logger.info(
+                            f"A4拡大座標PDFを検出: 資料NOを{page_scale:.3f}倍に補正 "
+                            f"(w={page_width:.1f}, h={page_height:.1f})"
+                        )
+
                     # 左綴じ対応が必要なページ検出（rotation=0のみ）
                     # A3縦: 高さ>1000pt かつ 縦長
                     is_a3_portrait = (original_rotation == 0
@@ -828,7 +860,7 @@ class PDFCombiner:
                     needs_bottom_right = a3_portrait_compat and (is_a3_portrait or is_landscape_for_binding)
 
                     # 座標計算（右上配置、回転対応）
-                    margin = 28.35  # 10mm
+                    margin = 28.35 * page_scale  # 視覚上10mm
                     if original_rotation == 0:
                         if needs_bottom_right:
                             # 左綴じ対応: 右下 + 90°CW回転テキスト
@@ -869,14 +901,17 @@ class PDFCombiner:
                         elif original_rotation == 270:
                             bg_x, bg_y, bg_rotation = page_width - margin - font_size, page_height - margin - text_width, 270
                         elif needs_bottom_right:
-                            rp = 4
+                            rp = 4 * page_scale
                             rect = fitz.Rect(x - rp, y - rp, x + font_size + rp, y + text_width + rp)
                             page.draw_rect(rect, color=None, fill=(1, 1, 1), overlay=True)
                             bg_x = None
                         else:
                             bg_x, bg_y, bg_rotation = x, y, rotate_param
                         if bg_x is not None:
-                            self._draw_simple_rectangle(page, bg_x, bg_y, text_width, font_size, bg_rotation, fill_white=True, border=False)
+                            self._draw_simple_rectangle(
+                                page, bg_x, bg_y, text_width, font_size, bg_rotation,
+                                fill_white=True, border=False, scale=page_scale,
+                            )
 
                     # テキスト挿入（全回転角度でReportLabオーバーレイ使用）
                     try:
@@ -915,7 +950,7 @@ class PDFCombiner:
                                 logger.info(f"{original_rotation}度回転ページ: ReportLabオーバーレイで挿入成功 {document_text}")
 
                                 # 四角囲いを描画
-                                self._draw_simple_rectangle(page, overlay_x, overlay_y, text_width, font_size, original_rotation)
+                                self._draw_simple_rectangle(page, overlay_x, overlay_y, text_width, font_size, original_rotation, scale=page_scale)
                             else:
                                 logger.warning(f"{original_rotation}度回転ページ: ReportLabオーバーレイ作成失敗")
                                 # フォールバック: 基本フォント
@@ -958,14 +993,14 @@ class PDFCombiner:
                             if needs_bottom_right:
                                 # 90°CW回転テキスト: 幅=font_size, 高さ=text_width
                                 try:
-                                    rp = 4
+                                    rp = 4 * page_scale
                                     rect = fitz.Rect(x - rp, y - rp,
                                                      x + font_size + rp, y + text_width + rp)
-                                    page.draw_rect(rect, color=(0, 0, 0), width=1.5)
+                                    page.draw_rect(rect, color=(0, 0, 0), width=1.5 * page_scale)
                                 except Exception as re:
                                     logger.debug(f"左綴じ矩形描画エラー: {re}")
                             else:
-                                self._draw_simple_rectangle(page, x, y, text_width, font_size, rotate_param)
+                                self._draw_simple_rectangle(page, x, y, text_width, font_size, rotate_param, scale=page_scale)
 
                     except Exception as e:
                         logger.error(f"P.{page_idx + 1} テキスト挿入エラー: {e}")
@@ -1232,7 +1267,8 @@ class PDFCombiner:
 
     def _draw_simple_rectangle(self, page, x: float, y: float, text_width: float,
                              font_size: float, rotate_param: int,
-                             fill_white: bool = False, border: bool = True) -> None:
+                             fill_white: bool = False, border: bool = True,
+                             scale: float = 1.0) -> None:
         """
         シンプルな四角囲い描画（フリーズ対策版）
 
@@ -1245,7 +1281,7 @@ class PDFCombiner:
             rotate_param: 回転パラメータ
         """
         try:
-            margin = 4
+            margin = 4 * scale
             text_height = font_size * 0.8
 
             # 回転に応じた四角形の座標計算（最適化版）
@@ -1263,7 +1299,7 @@ class PDFCombiner:
                                x + margin, y + text_height + margin)
             elif rotate_param == 270:
                 # 270度回転：縦向きテキスト用（幅と高さを交換）
-                x_adjust = 17  # 位置調整
+                x_adjust = 17 * scale  # 位置調整
                 rect = fitz.Rect(x - text_height - margin + x_adjust, y - margin,
                                x + margin + x_adjust, y + text_width + margin)
             elif rotate_param == -90:
@@ -1280,7 +1316,7 @@ class PDFCombiner:
                 rect,
                 color=(0, 0, 0) if border else None,
                 fill=(1, 1, 1) if fill_white else None,
-                width=1.5,
+                width=1.5 * scale,
                 overlay=True,
             )
             logger.info(f"四角囲い描画完了: {rect}")
