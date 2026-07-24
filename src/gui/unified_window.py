@@ -247,22 +247,24 @@ class UnifiedWindow:
         self._attach_tooltip(auto_open_switch, "処理完了後に出力フォルダを自動的に開く")
 
         # ── カスタムタブバー ──
+        # name: 内部キー（既存の状態管理・_switch_tab等で参照される正式名称、変更不可）
+        # icon/label: 幅570pxの狭いウィンドウ向けにボタン表示は短縮し、正式名称はツールチップで補う
         _TAB_DEFS = [
-            ("PDF変換",    TAB_CONVERSION),
-            ("資料NO挿入",  TAB_DOCUMENT),
-            ("PDF結合",    TAB_COMBINATION),
-            ("ページ番号挿入", TAB_PAGENUMBER),
+            ("PDF変換",       "🔄", "変換",     TAB_CONVERSION),
+            ("資料NO挿入",     "📄", "資料NO",   TAB_DOCUMENT),
+            ("PDF結合",       "📋", "結合",     TAB_COMBINATION),
+            ("ページ番号挿入", "🔢", "ページ番号", TAB_PAGENUMBER),
         ]
-        self._tab_active_colors = {name: colors for name, colors in _TAB_DEFS}
+        self._tab_active_colors = {name: colors for name, icon, label, colors in _TAB_DEFS}
         self._tab_buttons: dict = {}
         self._tab_frames: dict = {}
 
         tab_bar = ctk.CTkFrame(self.main_frame, fg_color="transparent", corner_radius=0)
         tab_bar.pack(fill="x", padx=8, pady=(0, 0))
 
-        for name, (active, hover) in _TAB_DEFS:
+        for name, icon, label, (active, hover) in _TAB_DEFS:
             btn = ctk.CTkButton(
-                tab_bar, text=name,
+                tab_bar, text=f"{icon} {label}",
                 font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
                 height=46, corner_radius=0,
                 fg_color=TAB_INACTIVE[0], hover_color=TAB_INACTIVE[1],
@@ -271,6 +273,7 @@ class UnifiedWindow:
             )
             btn.pack(side="left", fill="x", expand=True, padx=1, pady=0)
             self._tab_buttons[name] = btn
+            self._attach_tooltip(btn, name)
 
         # ── コンテンツエリア ──
         content_outer = ctk.CTkFrame(
@@ -279,7 +282,7 @@ class UnifiedWindow:
         )
         content_outer.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        for name, _ in _TAB_DEFS:
+        for name, _, _, _ in _TAB_DEFS:
             frame = ctk.CTkFrame(
                 content_outer, fg_color=("gray97", "gray15"),
                 corner_radius=0
@@ -612,19 +615,34 @@ class UnifiedWindow:
         )
         self.combination_combine_btn.pack(side="bottom", pady=(6, 6))
 
-        # オプションフレーム（白紙挿入 + ページ番号）
+        # オプションフレーム（白紙挿入 + ページ番号）— 詳細設定として折りたたみ
         self.add_blank_page_var = ctk.BooleanVar()
         self.add_page_number_var = ctk.BooleanVar()
         self.combine_pn_binding_compat_var = ctk.BooleanVar(value=False)
 
-        options_frame = ctk.CTkFrame(
+        comb_settings_frame = ctk.CTkFrame(
             self.combination_tab, fg_color=CLR_TOOLBAR_BG,
             border_width=1, border_color=CLR_BORDER, corner_radius=6
         )
-        options_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+        comb_settings_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+
+        # 詳細設定の開閉トグル
+        self.comb_advanced_visible = False
+        self.comb_advanced_toggle_btn = ctk.CTkButton(
+            comb_settings_frame, text="▼ 詳細設定（白紙挿入・ページ番号・左綴じなど）",
+            command=self._toggle_comb_advanced_settings,
+            height=32, fg_color=CLR_WHITE, border_width=1,
+            text_color=CLR_COMB_PRIMARY, border_color=CLR_COMB_PRIMARY,
+            hover_color=CLR_LIGHT_BG,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
+        )
+        self.comb_advanced_toggle_btn.pack(fill="x", padx=4, pady=4)
+
+        # 詳細設定エリア（初期状態は非表示）
+        self.comb_advanced_frame = ctk.CTkFrame(comb_settings_frame, fg_color="transparent")
 
         # 白紙挿入スイッチ
-        blank_row = ctk.CTkFrame(options_frame, fg_color="transparent")
+        blank_row = ctk.CTkFrame(self.comb_advanced_frame, fg_color="transparent")
         blank_row.pack(fill="x", padx=8, pady=(4, 2))
 
         self.add_blank_page_switch = ctk.CTkSwitch(
@@ -638,7 +656,7 @@ class UnifiedWindow:
         self.add_blank_page_switch.pack(side="left")
 
         # ページ番号スイッチ
-        page_row = ctk.CTkFrame(options_frame, fg_color="transparent")
+        page_row = ctk.CTkFrame(self.comb_advanced_frame, fg_color="transparent")
         page_row.pack(fill="x", padx=8, pady=(2, 2))
 
         self.add_page_number_switch = ctk.CTkSwitch(
@@ -653,7 +671,7 @@ class UnifiedWindow:
         self.add_page_number_switch.pack(side="left")
 
         # 開始ページ・開始番号（別行）
-        sub_row = ctk.CTkFrame(options_frame, fg_color="transparent")
+        sub_row = ctk.CTkFrame(self.comb_advanced_frame, fg_color="transparent")
         sub_row.pack(fill="x", padx=(30, 8), pady=(0, 2))
 
         self.start_page_label = ctk.CTkLabel(
@@ -686,7 +704,7 @@ class UnifiedWindow:
         self._make_digits_only(self.start_number_entry)
 
         # 左綴じ対応スイッチ（ページ番号オプションの下）
-        binding_row = ctk.CTkFrame(options_frame, fg_color="transparent")
+        binding_row = ctk.CTkFrame(self.comb_advanced_frame, fg_color="transparent")
         binding_row.pack(fill="x", padx=(30, 8), pady=(0, 4))
 
         self.combine_pn_binding_switch = ctk.CTkSwitch(
@@ -947,8 +965,25 @@ class UnifiedWindow:
         )
         self.preview_label.pack(side="left")
 
+        # 詳細設定の開閉トグル（フォント・A3対応・全ページ挿入・背景色はここに格納）
+        self.doc_advanced_visible = False
+        toggle_row = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        toggle_row.pack(fill="x", padx=8, pady=(0, 4))
+        self.doc_advanced_toggle_btn = ctk.CTkButton(
+            toggle_row, text="▼ 詳細設定（フォント・A3対応など）",
+            command=self._toggle_doc_advanced_settings,
+            height=32, fg_color=CLR_WHITE, border_width=1,
+            text_color=CLR_DOC_PRIMARY, border_color=CLR_DOC_PRIMARY,
+            hover_color=CLR_LIGHT_BG,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
+        )
+        self.doc_advanced_toggle_btn.pack(fill="x")
+
+        # 詳細設定エリア（初期状態は非表示）
+        self.doc_advanced_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+
         # 行2.5: フォント選択 + サイズ選択
-        font_row_doc = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        font_row_doc = ctk.CTkFrame(self.doc_advanced_frame, fg_color="transparent")
         font_row_doc.pack(fill="x", padx=8, pady=(0, 4))
 
         ctk.CTkLabel(
@@ -981,7 +1016,7 @@ class UnifiedWindow:
         ).pack(side="left")
 
         # 行3: ファイル名変更オプション
-        row3 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row3 = ctk.CTkFrame(self.doc_advanced_frame, fg_color="transparent")
         row3.pack(fill="x", padx=8, pady=(0, 3))
 
         self.rename_file_var = ctk.BooleanVar(value=False)
@@ -993,7 +1028,7 @@ class UnifiedWindow:
         ).pack(side="left")
 
         # 行4: A3縦ページ左綴じ対応オプション
-        row4 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row4 = ctk.CTkFrame(self.doc_advanced_frame, fg_color="transparent")
         row4.pack(fill="x", padx=8, pady=(0, 3))
 
         self.a3_compat_var = ctk.BooleanVar(value=False)
@@ -1005,7 +1040,7 @@ class UnifiedWindow:
         ).pack(side="left")
 
         # 行5: 全ページ挿入オプション
-        row5 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row5 = ctk.CTkFrame(self.doc_advanced_frame, fg_color="transparent")
         row5.pack(fill="x", padx=8, pady=(0, 5))
 
         self.insert_all_pages_var = ctk.BooleanVar(value=False)
@@ -1017,7 +1052,7 @@ class UnifiedWindow:
         ).pack(side="left")
 
         # 行6: 資料番号枠内の背景
-        row6 = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        row6 = ctk.CTkFrame(self.doc_advanced_frame, fg_color="transparent")
         row6.pack(fill="x", padx=8, pady=(0, 5))
 
         self.doc_white_background_var = ctk.BooleanVar(value=False)
@@ -1046,6 +1081,16 @@ class UnifiedWindow:
             justify="left"
         )
         self.document_list_msg.pack(fill="both", expand=True, padx=20, pady=20)
+
+    def _toggle_doc_advanced_settings(self) -> None:
+        """資料NO挿入タブの詳細設定（フォント・A3対応など）の表示/非表示を切り替え"""
+        self.doc_advanced_visible = not self.doc_advanced_visible
+        if self.doc_advanced_visible:
+            self.doc_advanced_frame.pack(fill="x")
+            self.doc_advanced_toggle_btn.configure(text="▲ 詳細設定（フォント・A3対応など）")
+        else:
+            self.doc_advanced_frame.pack_forget()
+            self.doc_advanced_toggle_btn.configure(text="▼ 詳細設定（フォント・A3対応など）")
 
     def _make_digits_only(self, entry: ctk.CTkEntry) -> None:
         """Entryを数字のみ入力可能にする（空文字は許可、それ以外の非数字は拒否）"""
@@ -1182,6 +1227,16 @@ class UnifiedWindow:
         except Exception as e:
             logger.error(f"フォルダを開けませんでした: {folder_path} - {e}")
             messagebox.showwarning("エラー", f"フォルダを開けませんでした。\n{folder_path}")
+
+    def _toggle_comb_advanced_settings(self) -> None:
+        """PDF結合タブの詳細設定（白紙挿入・ページ番号・左綴じなど）の表示/非表示を切り替え"""
+        self.comb_advanced_visible = not self.comb_advanced_visible
+        if self.comb_advanced_visible:
+            self.comb_advanced_frame.pack(fill="x")
+            self.comb_advanced_toggle_btn.configure(text="▲ 詳細設定（白紙挿入・ページ番号・左綴じなど）")
+        else:
+            self.comb_advanced_frame.pack_forget()
+            self.comb_advanced_toggle_btn.configure(text="▼ 詳細設定（白紙挿入・ページ番号・左綴じなど）")
 
     def _toggle_page_number_options(self) -> None:
         """ページ番号オプションの有効/無効を切り替える"""

@@ -11,7 +11,8 @@ import time
 
 from .theme import (
     CLR_LIGHT_BG, CLR_SEL_BORDER, CLR_RED_LIGHT, CLR_RED_TEXT,
-    CLR_GRAY_TEXT, CLR_DARK_TEXT, get_file_type_badge, FONT_FAMILY
+    CLR_GRAY_TEXT, CLR_DARK_TEXT, CLR_BORDER, CLR_ACCENT,
+    get_file_type_badge, FONT_FAMILY
 )
 
 try:
@@ -250,7 +251,9 @@ class DraggableListItem(ctk.CTkFrame):
             self.status_label.configure(text="")
 
     def _update_appearance(self):
-        if self.is_selected:
+        if self.is_dragging:
+            self.configure(fg_color=CLR_BORDER, border_width=0)
+        elif self.is_selected:
             self.configure(fg_color=CLR_LIGHT_BG,
                            border_width=1, border_color=CLR_SEL_BORDER)
         else:
@@ -454,13 +457,15 @@ class DraggableFileList(ctk.CTkScrollableFrame):
     def _on_drag_start(self, item: DraggableListItem, event):
         """ドラッグ開始時の処理"""
         self.drag_source = item
+        item.is_dragging = True
+        item._update_appearance()
 
         # ドロップインジケーターの作成
         if not self.drop_indicator:
             self.drop_indicator = ctk.CTkFrame(
                 self,
-                height=2,
-                fg_color=("blue", "lightblue")
+                height=3,
+                fg_color=CLR_ACCENT
             )
 
         # マウス座標に基づいてドロップ位置を計算
@@ -485,6 +490,11 @@ class DraggableFileList(ctk.CTkScrollableFrame):
         if self.drop_indicator:
             self.drop_indicator.pack_forget()
 
+        # ドラッグ中の見た目を解除
+        if self.drag_source:
+            self.drag_source.is_dragging = False
+            self.drag_source._update_appearance()
+
         # ドロップ処理
         if self.drag_source and self.drop_target_index >= 0:
             self._perform_drop()
@@ -499,7 +509,7 @@ class DraggableFileList(ctk.CTkScrollableFrame):
         relative_y = event.y_root - widget_y
 
         # どのアイテムの間にドロップするかを計算
-        item_height = 39  # アイテムの高さ + パディング
+        item_height = 28  # アイテムの高さ26px + pady(上下1pxずつ)
         target_index = min(max(0, relative_y // item_height), len(self.file_paths))
 
         if target_index != self.drop_target_index:
