@@ -132,10 +132,9 @@ class ImageConverter:
             y = (page_height - new_height) / 2
             
             canvas_obj.drawImage(img_reader, x, y, width=new_width, height=new_height)
-            canvas_obj.save()
-            
+
             return True
-        
+
         except Exception as e:
             logger.error(f"画像追加エラー: {image_path} - {str(e)}")
             return False

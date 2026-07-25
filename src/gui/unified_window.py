@@ -42,6 +42,7 @@ from .preview_dialog import PDFPreviewDialog, render_doc_number_preview, render_
 from .result_dialog import FailureDetailDialog
 from .completion_banner import CompletionBanner
 from .confirm_dialog import confirm_with_skip
+from .replace_dialog import ReplaceDocumentDialog
 from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
@@ -97,6 +98,11 @@ class UnifiedWindow:
         self.conversion_files: List[str] = []
         self.combination_files: List[str] = []
         self.document_number_files: List[str] = []  # 資料NO挿入用ファイル（旧式、互換性のため残す）
+        # 資料NO挿入結果のファイルパス → {"document_number", "stamp_settings"}
+        # combine_pdfsへ渡し、差し替え機能用の構成情報として結合PDFに埋め込む
+        self.combination_document_metadata: Dict[str, dict] = {}
+        # 直近に生成した結合済みPDF（資料差し替えダイアログの初期選択に使う）
+        self._last_combination_output_path: str = ""
 
         # PDF変換のキャンセル制御（ファイル境界で中断）
         self._conversion_cancel_event = threading.Event()
@@ -529,6 +535,17 @@ class UnifiedWindow:
             state="disabled"
         )
         self.combination_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.combination_replace_btn = ctk.CTkButton(
+            toolbar, text="資料を差し替え...",
+            command=self._open_replace_dialog,
+            height=32, width=130,
+            fg_color=CLR_WHITE, text_color=CLR_COMB_PRIMARY,
+            border_width=1, border_color=CLR_COMB_PRIMARY,
+            hover_color=CLR_LIGHT_BG,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
+        )
+        self.combination_replace_btn.pack(side="right", padx=(4, 8), pady=6)
 
         self.combination_move_up_btn = ctk.CTkButton(
             toolbar, text="↑", command=self._move_combination_up,
@@ -1205,11 +1222,18 @@ class UnifiedWindow:
         self._add_document_number_files(existing)
         self._switch_tab("資料NO挿入")
 
-    def _send_files_to_combination_tab(self, paths: List[str]) -> None:
-        """処理結果をPDF結合タブへ送る"""
+    def _send_files_to_combination_tab(self, paths: List[str],
+                                       document_metadata: Optional[Dict[str, dict]] = None) -> None:
+        """処理結果をPDF結合タブへ送る
+
+        document_metadataを渡すと、結合時に資料番号・スタンプ設定が構成情報として
+        結合PDFへ埋め込まれ、差し替え機能で使えるようになる。
+        """
         existing = [p for p in paths if Path(p).exists()]
         if not existing:
             return
+        if document_metadata:
+            self.combination_document_metadata.update(document_metadata)
         self._add_combination_files(existing)
         self._switch_tab("PDF結合")
 
@@ -1930,7 +1954,8 @@ class UnifiedWindow:
             if folder:
                 buttons.append(("📂 フォルダを開く", lambda f=folder: self._open_folder(f)))
             buttons.append(("→ 結合タブへ送る",
-                             lambda p=processed: self._send_files_to_combination_tab(p)))
+                             lambda p=processed, m=result.document_metadata:
+                             self._send_files_to_combination_tab(p, m)))
 
             self.document_banner.show(
                 f"資料NO挿入が完了しました（{len(result.processed_files)}個 / {result.total_pages}ページ）",
@@ -2370,6 +2395,14 @@ class UnifiedWindow:
         # UI有効化（リストは保持し、内容変更・設定変更後の再実行に備える）
         self._set_conversion_running_ui(False)
 
+    def _open_replace_dialog(self) -> None:
+        """資料差し替えダイアログを開く"""
+        ReplaceDocumentDialog(
+            self.root, self.pdf_combiner,
+            initial_pdf_path=self._last_combination_output_path,
+            open_folder_callback=self._open_folder,
+        )
+
     def _start_combination(self) -> None:
         """PDF結合開始"""
         if not self.combination_files:
@@ -2422,7 +2455,8 @@ class UnifiedWindow:
                 start_page,
                 start_number,
                 progress_callback,
-                page_number_binding_compat=pn_binding_compat
+                page_number_binding_compat=pn_binding_compat,
+                document_metadata=self.combination_document_metadata
             )
             
             # UI更新
@@ -2450,6 +2484,7 @@ class UnifiedWindow:
             self.combination_status.configure(
                 text=f"結合完了: {result.total_pages}ページ ({len(result.processed_files)}ファイル)"
             )
+            self._last_combination_output_path = result.output_path
 
             folder = str(Path(result.output_path).parent)
             if self.auto_open_output_folder_var.get():
