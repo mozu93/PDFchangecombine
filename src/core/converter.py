@@ -42,7 +42,8 @@ class PDFConverter:
         
         logger.info("PDFコンバーター初期化完了")
     
-    async def convert_files_async(self, file_paths: List[str], split_sheets: bool = False, output_dir: str = "") -> List[ConversionResult]:
+    async def convert_files_async(self, file_paths: List[str], split_sheets: bool = False, output_dir: str = "",
+                                  overwrite: bool = False) -> List[ConversionResult]:
         """
         複数ファイルの非同期変換（要件定義書 F-103）
 
@@ -50,6 +51,7 @@ class PDFConverter:
             file_paths: 変換対象ファイルパスのリスト
             split_sheets: Excelシートを分割するかどうか
             output_dir: 出力先ディレクトリ（空文字の場合は各ファイルと同じフォルダ内の「変換済」へ）
+            overwrite: Trueの場合、同名ファイルが既にあってもそのまま上書きする
 
         Returns:
             List[ConversionResult]: 変換結果のリスト
@@ -66,7 +68,7 @@ class PDFConverter:
         # 非同期タスクを作成
         tasks = []
         for file_path in file_paths:
-            task = self._convert_single_file_with_semaphore(semaphore, file_path, split_sheets, output_dir)
+            task = self._convert_single_file_with_semaphore(semaphore, file_path, split_sheets, output_dir, overwrite)
             tasks.append(task)
         
         # 全てのタスクを実行
@@ -102,15 +104,16 @@ class PDFConverter:
     
     async def _convert_single_file_with_semaphore(self, semaphore: asyncio.Semaphore,
                                                  file_path: str, split_sheets: bool = False,
-                                                 output_dir: str = "") -> ConversionResult:
+                                                 output_dir: str = "", overwrite: bool = False) -> ConversionResult:
         """セマフォ付き単一ファイル変換"""
         async with semaphore:
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(
-                self.executor, self._convert_single_file, file_path, split_sheets, output_dir
+                self.executor, self._convert_single_file, file_path, split_sheets, output_dir, overwrite
             )
 
-    def _convert_single_file(self, file_path: str, split_sheets: bool = False, output_dir: str = "") -> ConversionResult:
+    def _convert_single_file(self, file_path: str, split_sheets: bool = False, output_dir: str = "",
+                            overwrite: bool = False) -> ConversionResult:
         """
         単一ファイルの変換処理（要件定義書 F-103）
 
@@ -132,7 +135,7 @@ class PDFConverter:
                 return result
 
             # 出力ファイルパス生成
-            output_path = OutputManager.get_output_file_path(file_path, output_dir)
+            output_path = OutputManager.get_output_file_path(file_path, output_dir, overwrite=overwrite)
             
             # ファイル種別に応じて変換実行
             file_type = FileValidator.get_file_type(file_path)

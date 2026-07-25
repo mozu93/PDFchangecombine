@@ -8,11 +8,13 @@ from pathlib import Path
 
 # アプリケーション基本設定
 APP_NAME = "PDF変換・結合ツール"
-APP_VERSION = "1.21.6"
+APP_VERSION = "1.21.7"
 WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
-# ウィンドウ設定（450×700縦長レイアウト）
-WINDOW_WIDTH = 570
+# ウィンドウ設定（縦長レイアウト）
+# WINDOW_WIDTH: 結合タブのツールバー（PDF選択・選択削除・クリア・↑・↓・Ａ↓・
+# 資料を差し替え...・ファイル数）が1行に収まる最小幅を確保している
+WINDOW_WIDTH = 700
 WINDOW_HEIGHT = 700
 WINDOW_MIN_WIDTH = 350
 WINDOW_MIN_HEIGHT = 630

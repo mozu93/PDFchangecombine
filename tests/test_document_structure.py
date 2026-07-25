@@ -327,3 +327,165 @@ class TestRenumberDocuments:
             str(renamed), str(tmp_path / "out.pdf"), numbering_type="basic", document_prefix="資料"
         )
         assert result.success is True
+
+
+class TestDocumentNumberSelfEmbedding:
+    """資料NO挿入済みPDF単体に資料番号を埋め込み、セッションをまたいで
+    結合しても「(番号なし)」にならないようにする機能のテスト。
+
+    実務では「資料NO挿入 → そのまま結合」だけでなく、一度ファイルとして
+    保存してから後日改めて結合タブへドラッグ＆ドロップするケースがあるため、
+    document_metadataがなくても各PDFファイル自体から資料番号を復元できる
+    必要がある。
+    """
+
+    def test_stamped_pdf_embeds_recoverable_document_number(self, combiner, tmp_path):
+        src = _make_pdf(tmp_path / "src.pdf", 1)
+        num_result = combiner.add_document_numbers(
+            pdf_paths=[str(src)], output_path="", document_number="1",
+            document_prefix="資料", output_dir=str(tmp_path),
+        )
+        assert num_result.success is True
+        stamped_path = num_result.processed_files[0]
+
+        stamp = combiner.read_embedded_document_stamp(stamped_path)
+        assert stamp is not None
+        assert stamp["document_number"] == "資料1"
+        assert stamp["stamp_settings"]["number_part"] == "1"
+        assert stamp["stamp_settings"]["document_prefix"] == "資料"
+
+    def test_unstamped_pdf_has_no_embedded_document_stamp(self, combiner, tmp_path):
+        src = _make_pdf(tmp_path / "plain.pdf", 1)
+        assert combiner.read_embedded_document_stamp(str(src)) is None
+
+    def test_combine_recovers_document_number_without_explicit_metadata(self, combiner, tmp_path):
+        a = _make_pdf(tmp_path / "a.pdf", 1)
+        b = _make_pdf(tmp_path / "b.pdf", 1)
+        num_result = combiner.add_sequential_document_numbers(
+            pdf_paths=[str(a), str(b)], output_dir=str(tmp_path),
+            numbering_type="basic", document_prefix="資料",
+        )
+        assert num_result.success is True
+
+        # 資料NOタブ→結合タブの自動連携（document_metadata）を使わず、
+        # 手動でファイルを選び直したケースを再現する。
+        out = tmp_path / "combined.pdf"
+        combine_result = combiner.combine_pdfs(num_result.processed_files, str(out))
+        assert combine_result.success is True
+
+        manifest = combiner.load_combine_manifest(str(out)).manifest
+        labels = [d["document_number"] for d in manifest["documents"]]
+        assert labels == ["資料1", "資料2"]
+
+
+class TestReCombineAlreadyCombinedPdf:
+    """「ページ番号」タブ（結合とは別のタブ）で、結合済みPDFに後からページ番号を
+    付ける操作は、内部的にcombine_pdfs([結合済みPDF], ...)を呼んでいる。
+
+    この結合済みPDF自体が既に資料1/資料2/資料3という構成情報を持っている場合、
+    それを1個の「番号なし」資料として扱ってしまうと、以後の資料差し替えで
+    対象PDF全体（他の資料も含めて）が丸ごと入れ替わってしまう。
+    元の資料構成を維持したまま展開されるべき。
+    """
+
+    def test_combining_already_combined_pdf_preserves_document_boundaries(self, combiner, tmp_path):
+        out1 = _combine_three_stamped_docs(combiner, tmp_path, add_page_numbers=False)
+
+        # 「ページ番号」タブが行うのと同じ呼び出し（結合済みPDF1個をcombine_pdfsに渡す）
+        out2 = tmp_path / "with_pn.pdf"
+        result = combiner.combine_pdfs(
+            [str(out1)], str(out2), add_page_numbers=True, start_page=1, start_number=1,
+        )
+        assert result.success is True
+        assert _page_footer_numbers(out2) == ["1", "2", "3"]
+
+        manifest = combiner.load_combine_manifest(str(out2)).manifest
+        labels = [d["document_number"] for d in manifest["documents"]]
+        assert labels == ["資料1", "資料2", "資料3"]
+
+    def test_replace_after_pagenumber_tab_only_affects_target_document(self, combiner, tmp_path):
+        out1 = _combine_three_stamped_docs(combiner, tmp_path, add_page_numbers=False)
+        out2 = tmp_path / "with_pn.pdf"
+        combiner.combine_pdfs([str(out1)], str(out2), add_page_numbers=True, start_page=1, start_number=1)
+
+        new_file = _make_pdf(tmp_path / "new.pdf", 1)
+        out3 = tmp_path / "replaced.pdf"
+        result = combiner.replace_document_in_combined_pdf(str(out2), "資料2", str(new_file), str(out3))
+        assert result.success is True
+
+        manifest = combiner.load_combine_manifest(str(out3)).manifest
+        labels = [d["document_number"] for d in manifest["documents"]]
+        # 資料1・資料3はそのまま残り、資料2だけが差し替わる
+        assert labels == ["資料1", "資料2", "資料3"]
+        assert _page_footer_numbers(out3) == ["1", "2", "3"]
+
+
+class TestApplyDocumentOperations:
+    """資料の追加・差し替え・削除を「操作の一覧」としてまとめて渡し、
+    1回の実行で1つの出力ファイルだけを作る機能のテスト。
+
+    従来は差し替えダイアログで操作するたびに毎回新しいファイルが
+    作られていた（資料2に追加→ファイル作成、続けて資料1を差し替え→
+    別のファイル作成）ため、中間ファイルが増えて分かりにくいという
+    フィードバックを受けて追加した。
+    """
+
+    def test_applies_two_replaces_in_one_output_file(self, combiner, tmp_path):
+        out = _combine_three_stamped_docs(combiner, tmp_path, add_page_numbers=False)
+        new1 = _make_pdf(tmp_path / "new1.pdf", 1)
+        new2 = _make_pdf(tmp_path / "new2.pdf", 1)
+        final = tmp_path / "final.pdf"
+        files_before = {p.name for p in tmp_path.iterdir()}
+
+        operations = [
+            {"type": "replace", "document_number": "資料1", "new_source_path": str(new1)},
+            {"type": "replace", "document_number": "資料2", "new_source_path": str(new2)},
+        ]
+        result = combiner.apply_document_operations(str(out), operations, str(final))
+        assert result.success is True
+
+        manifest = combiner.load_combine_manifest(str(final)).manifest
+        labels = [d["document_number"] for d in manifest["documents"]]
+        assert labels == ["資料1", "資料2", "資料3"]
+
+        # 中間ファイルが最終出力ファイル以外に残っていないこと
+        files_after = {p.name for p in tmp_path.iterdir()}
+        assert files_after - files_before == {"final.pdf"}
+
+    def test_applies_insert_then_delete(self, combiner, tmp_path):
+        out = _combine_three_stamped_docs(combiner, tmp_path, add_page_numbers=True)
+        new_doc = _make_pdf(tmp_path / "new.pdf", 1)
+        final = tmp_path / "final.pdf"
+
+        operations = [
+            {
+                "type": "insert", "insert_after_document_number": "資料1",
+                "document_number": "資料1.5", "new_source_path": str(new_doc),
+                "stamp_settings": None,
+            },
+            {"type": "delete", "document_number": "資料3"},
+        ]
+        result = combiner.apply_document_operations(str(out), operations, str(final))
+        assert result.success is True
+
+        manifest = combiner.load_combine_manifest(str(final)).manifest
+        labels = [d["document_number"] for d in manifest["documents"]]
+        assert labels == ["資料1", "資料1.5", "資料2"]
+        assert _page_footer_numbers(final) == ["1", "2", "3"]
+
+    def test_empty_operation_list_returns_error(self, combiner, tmp_path):
+        out = _combine_three_stamped_docs(combiner, tmp_path)
+        result = combiner.apply_document_operations(str(out), [], str(tmp_path / "final.pdf"))
+        assert result.success is False
+
+    def test_stops_and_reports_error_on_unknown_document_number(self, combiner, tmp_path):
+        out = _combine_three_stamped_docs(combiner, tmp_path)
+        new_doc = _make_pdf(tmp_path / "new.pdf", 1)
+        final = tmp_path / "final.pdf"
+
+        operations = [
+            {"type": "replace", "document_number": "資料99", "new_source_path": str(new_doc)},
+        ]
+        result = combiner.apply_document_operations(str(out), operations, str(final))
+        assert result.success is False
+        assert not final.exists()

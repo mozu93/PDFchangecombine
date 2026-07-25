@@ -21,6 +21,11 @@ _CLEAN_MASTER_EMBED_NAME = "pdfcc_clean_master.pdf"
 _RAW_MASTER_EMBED_NAME = "pdfcc_raw_master.pdf"
 _MANIFEST_VERSION = 1
 
+# 資料NO挿入済みの単一PDFに埋め込む資料番号情報。
+# 「資料NO挿入→結合」を同一セッションで連続して行わず、一度ファイルとして
+# 保存してから後日改めて結合する場合でも資料番号を復元できるようにする。
+_DOCUMENT_STAMP_EMBED_NAME = "pdfcc_document_stamp.json"
+
 
 class ManifestLoadResult:
     """結合済みPDFに埋め込まれた構成情報の読み込み結果"""
@@ -384,6 +389,26 @@ class PDFCombiner:
 
         return result
 
+    def read_embedded_document_stamp(self, pdf_path: str) -> Optional[dict]:
+        """単一PDFに埋め込まれた資料番号情報を読み込む。
+
+        add_document_numbers/add_sequential_document_numbersで資料NOを
+        挿入したPDFファイルには {"document_number": ..., "stamp_settings": ...}
+        が埋め込まれている。資料NO挿入とは別セッションで結合される場合でも、
+        combine_pdfsがこれを読み取って資料番号を復元できるようにする。
+
+        埋め込みがない（資料NO未挿入、または本アプリ以外で作成された）場合はNone。
+        """
+        try:
+            with fitz.open(pdf_path) as doc:
+                if _DOCUMENT_STAMP_EMBED_NAME not in doc.embfile_names():
+                    return None
+                raw = doc.embfile_get(_DOCUMENT_STAMP_EMBED_NAME)
+                return json.loads(raw.decode("utf-8"))
+        except Exception as e:
+            logger.warning(f"資料番号情報の読み込みに失敗しました: {pdf_path} - {e}")
+            return None
+
     def combine_pdfs(self, pdf_paths: List[str], output_path: str,
                     add_blank_page: bool = False,
                     add_page_numbers: bool = False,
@@ -428,7 +453,12 @@ class PDFCombiner:
                         progress = (i + 1) / len(valid_files) * 90  # 結合処理を90%とする
                         progress_callback(f"結合中: {Path(pdf_path).name}", progress)
 
-                    entry_meta = (document_metadata or {}).get(pdf_path, {})
+                    entry_meta = (document_metadata or {}).get(pdf_path)
+                    if not entry_meta:
+                        # 資料NOタブ→結合タブの自動連携を経由していない
+                        # （手動選択・別セッション等）場合、PDF自体に埋め込まれた
+                        # 資料番号情報があればそれで補完する
+                        entry_meta = self.read_embedded_document_stamp(pdf_path) or {}
                     stamp_settings = entry_meta.get("stamp_settings")
 
                     pages_before = len(writer)
@@ -436,29 +466,58 @@ class PDFCombiner:
                         blank_added = self._append_pdf_with_optional_blank(writer, reader, add_blank_page)
                     pages_added = len(writer) - pages_before
 
-                    raw_unavailable = True
-                    if stamp_settings:
-                        has_any_stamped_doc = True
-                        raw_source_path = stamp_settings.get("original_source_path")
-                        raw_unavailable = self._append_raw_counterpart(
-                            raw_writer, raw_source_path, pages_added, add_blank_page
-                        )
+                    # このPDF自体が既に本アプリの結合済みPDF（複数資料の構成情報を持つ）
+                    # である場合、1個の資料として扱うと元の資料構成が失われてしまう
+                    # （例:「ページ番号」タブで結合済みPDFに後からページ番号を
+                    # 付ける操作は、内部的にこのcombine_pdfsを1ファイルで呼び出す）。
+                    # その場合は元の資料構成をそのまま展開する。
+                    nested_manifest = None
+                    if not blank_added:
+                        nested_result = self.load_combine_manifest(pdf_path)
+                        if nested_result.success:
+                            nested_manifest = nested_result.manifest
 
-                    if raw_unavailable:
-                        # 元ファイルが無い/ページ数不一致の場合は、スタンプ後の内容で代用する
-                        # （再採番時にこの資料だけは古いスタンプが残る可能性がある）
-                        with fitz.open(pdf_path) as reader:
-                            self._append_pdf_with_optional_blank(raw_writer, reader, add_blank_page)
+                    if nested_manifest is not None:
+                        for nested_entry in nested_manifest.get("documents", []):
+                            if nested_entry.get("stamp_settings"):
+                                has_any_stamped_doc = True
+                            manifest_entries.append({
+                                "document_number": nested_entry.get("document_number", ""),
+                                "source_filename": nested_entry.get("source_filename", ""),
+                                "page_start": current_page_count + int(nested_entry["page_start"]),
+                                "page_end": current_page_count + int(nested_entry["page_end"]),
+                                "blank_page_added": nested_entry.get("blank_page_added", False),
+                                "stamp_settings": nested_entry.get("stamp_settings"),
+                                "raw_unavailable": nested_entry.get("raw_unavailable", False),
+                            })
+                        with fitz.open(pdf_path) as nested_combined_doc:
+                            nested_raw_doc = self._load_raw_master(nested_combined_doc)
+                        raw_writer.insert_pdf(nested_raw_doc)
+                        nested_raw_doc.close()
+                    else:
+                        raw_unavailable = True
+                        if stamp_settings:
+                            has_any_stamped_doc = True
+                            raw_source_path = stamp_settings.get("original_source_path")
+                            raw_unavailable = self._append_raw_counterpart(
+                                raw_writer, raw_source_path, pages_added, add_blank_page
+                            )
 
-                    manifest_entries.append({
-                        "document_number": entry_meta.get("document_number", ""),
-                        "source_filename": Path(pdf_path).name,
-                        "page_start": current_page_count + 1,
-                        "page_end": current_page_count + pages_added,
-                        "blank_page_added": blank_added,
-                        "stamp_settings": stamp_settings,
-                        "raw_unavailable": raw_unavailable,
-                    })
+                        if raw_unavailable:
+                            # 元ファイルが無い/ページ数不一致の場合は、スタンプ後の内容で代用する
+                            # （再採番時にこの資料だけは古いスタンプが残る可能性がある）
+                            with fitz.open(pdf_path) as reader:
+                                self._append_pdf_with_optional_blank(raw_writer, reader, add_blank_page)
+
+                        manifest_entries.append({
+                            "document_number": entry_meta.get("document_number", ""),
+                            "source_filename": Path(pdf_path).name,
+                            "page_start": current_page_count + 1,
+                            "page_end": current_page_count + pages_added,
+                            "blank_page_added": blank_added,
+                            "stamp_settings": stamp_settings,
+                            "raw_unavailable": raw_unavailable,
+                        })
                     current_page_count += pages_added
 
                     processed_files.append(pdf_path)
@@ -1025,6 +1084,86 @@ class PDFCombiner:
 
         return result
 
+    def apply_document_operations(self, combined_pdf_path: str, operations: List[dict],
+                                 output_path: str,
+                                 progress_callback: Optional[callable] = None) -> CombineResult:
+        """資料の追加・差し替え・削除を複数まとめて適用し、出力ファイルを1つだけ作る。
+
+        差し替えダイアログで操作するたびに毎回新しいファイルができてしまう
+        （資料2に追加→ファイル作成、続けて資料1を差し替え→別のファイル作成）
+        という煩雑さを避けるため、内部で操作を順番に連結し、中間結果は
+        一時ディレクトリにのみ作成する（最終出力ファイル以外は残らない）。
+
+        Args:
+            operations: 適用したい変更を順番に並べたリスト。各要素は以下のいずれか:
+                {"type": "replace", "document_number": str, "new_source_path": str}
+                {"type": "insert", "insert_after_document_number": Optional[str],
+                 "document_number": str, "new_source_path": str,
+                 "stamp_settings": Optional[dict]}
+                {"type": "delete", "document_number": str}
+        """
+        start_time = time.time()
+        result = CombineResult(output_path=output_path)
+
+        if not operations:
+            result.error_message = "適用する変更がありません"
+            return result
+
+        temp_dir = tempfile.mkdtemp(prefix="pdfcc_batch_")
+        current_path = combined_pdf_path
+        step_result = None
+        try:
+            for i, operation in enumerate(operations):
+                is_last = i == len(operations) - 1
+                step_output = output_path if is_last else os.path.join(temp_dir, f"step_{i}.pdf")
+
+                if progress_callback:
+                    progress_callback(f"変更を適用中 ({i + 1}/{len(operations)})", (i / len(operations)) * 90)
+
+                op_type = operation.get("type")
+                if op_type == "replace":
+                    step_result = self.replace_document_in_combined_pdf(
+                        current_path, operation["document_number"],
+                        operation["new_source_path"], step_output,
+                    )
+                elif op_type == "insert":
+                    step_result = self.insert_document_into_combined_pdf(
+                        current_path, operation["new_source_path"], step_output,
+                        insert_after_document_number=operation.get("insert_after_document_number"),
+                        document_number=operation.get("document_number", ""),
+                        stamp_settings=operation.get("stamp_settings"),
+                    )
+                elif op_type == "delete":
+                    step_result = self.delete_document_from_combined_pdf(
+                        current_path, operation["document_number"], step_output,
+                    )
+                else:
+                    result.error_message = f"不明な操作種別です: {op_type}"
+                    return result
+
+                if not step_result.success:
+                    result.error_message = step_result.error_message
+                    return result
+
+                current_path = step_output
+
+            result.success = True
+            result.output_path = output_path
+            result.total_pages = step_result.total_pages
+
+            if progress_callback:
+                progress_callback("変更の適用完了", 100)
+
+        except Exception as e:
+            result.error_message = f"変更の適用エラー: {str(e)}"
+            logger.error(f"資料操作の一括適用エラー: {str(e)}", exc_info=True)
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            result.processing_time = time.time() - start_time
+
+        return result
+
     def renumber_documents_in_combined_pdf(self, combined_pdf_path: str, output_path: str,
                                           numbering_type: str = "basic", start_number: int = 1,
                                           prefix_number: str = "1", document_prefix: str = "資料",
@@ -1308,7 +1447,8 @@ class PDFCombiner:
                            doc_font_size: int = 20,
                            output_dir: str = "",
                            progress_callback: Optional[callable] = None,
-                           white_background: bool = False) -> CombineResult:
+                           white_background: bool = False,
+                           overwrite: bool = False) -> CombineResult:
         """
         PDFファイルに資料NO挿入（各ファイル個別処理・非破壊出力）
 
@@ -1318,6 +1458,7 @@ class PDFCombiner:
             document_number: 資料番号（例: "1", "2", "1-1"）
             output_dir: 出力先ディレクトリ（空文字の場合は元ファイルと同じフォルダ）
             progress_callback: 進捗コールバック関数
+            overwrite: Trueの場合、同名ファイルが既にあってもそのまま上書きする
 
         Returns:
             CombineResult: 処理結果
@@ -1352,7 +1493,7 @@ class PDFCombiner:
 
                     # 資料NO挿入（非破壊・出力先フォルダに新規作成）
                     effective_output_dir = output_dir if output_dir else str(Path(pdf_path).parent)
-                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir, white_background)
+                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir, white_background, overwrite)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -1426,7 +1567,8 @@ class PDFCombiner:
                                       insert_all_pages: bool = False,
                                       doc_font_size: int = 20,
                                       progress_callback: Optional[callable] = None,
-                                      white_background: bool = False) -> CombineResult:
+                                      white_background: bool = False,
+                                      overwrite: bool = False) -> CombineResult:
         """
         複数PDFファイルに連番で資料NO挿入
 
@@ -1508,7 +1650,7 @@ class PDFCombiner:
 
                     # 資料NO挿入実行（非破壊・出力先フォルダに新規作成）
                     effective_output_dir = output_dir if output_dir else str(Path(pdf_path).parent)
-                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir, white_background)
+                    new_path = self._process_single_pdf_to_dir(pdf_path, document_number, document_prefix, rename_file, a3_portrait_compat, insert_all_pages, doc_font_size, effective_output_dir, white_background, overwrite)
 
                     if new_path:
                         processed_files.append(new_path)
@@ -1625,7 +1767,7 @@ class PDFCombiner:
             number = index + 1
             return f"{number}"
 
-    def _process_single_pdf_to_dir(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False, doc_font_size: int = 20, output_dir: str = "", white_background: bool = False) -> str:
+    def _process_single_pdf_to_dir(self, pdf_path: str, document_number: str, document_prefix: str = "資料", rename_file: bool = False, a3_portrait_compat: bool = False, insert_all_pages: bool = False, doc_font_size: int = 20, output_dir: str = "", white_background: bool = False, overwrite: bool = False) -> str:
         """
         単一PDFファイルに資料NO挿入（非破壊・出力先フォルダに新規作成）
 
@@ -1635,6 +1777,7 @@ class PDFCombiner:
             insert_all_pages: Trueのとき全ページに挿入、FalseのときはP.1のみ
             doc_font_size: 資料番号のフォントサイズ（20 / 18 / 16 / 14 / 12）
             output_dir: 出力先ディレクトリ（空文字の場合は元ファイルと同じフォルダ）
+            overwrite: Trueの場合、同名ファイルが既にあってもそのまま上書きする
 
         Returns:
             str: 出力ファイルパス（成功時）、None（失敗時）
@@ -1870,7 +2013,32 @@ class PDFCombiner:
                     output_filename = pdf_path_obj.name
 
                 # 出力先パスを決定（同名ファイルがあれば連番付与）
-                output_file_path = OutputManager.get_unique_output_path(effective_output_dir, output_filename)
+                output_file_path = OutputManager.get_unique_output_path(effective_output_dir, output_filename, overwrite=overwrite)
+
+                # 資料番号情報をPDF自体に埋め込む（資料NO挿入と別セッションで
+                # 結合された場合でも、combine_pdfsが資料番号を復元できるようにする）
+                try:
+                    stamp_payload = {
+                        "document_number": document_text,
+                        "stamp_settings": {
+                            "document_prefix": document_prefix,
+                            "number_part": document_number,
+                            "font_display_name": self.font_display_name,
+                            "doc_font_size": doc_font_size,
+                            "white_background": white_background,
+                            "a3_portrait_compat": a3_portrait_compat,
+                            "insert_all_pages": insert_all_pages,
+                            "original_source_path": pdf_path,
+                        },
+                    }
+                    doc.embfile_add(
+                        _DOCUMENT_STAMP_EMBED_NAME,
+                        json.dumps(stamp_payload, ensure_ascii=False).encode("utf-8"),
+                        filename=_DOCUMENT_STAMP_EMBED_NAME,
+                        desc="PDF変換・結合ツール 資料番号情報（自動生成・編集しないでください）",
+                    )
+                except Exception as e:
+                    logger.warning(f"資料番号情報の埋め込みに失敗しました: {e}")
 
                 # 一時ファイルに保存してから出力先へ移動（フリーズ対策）
                 temp_path = pdf_path + ".tmp"

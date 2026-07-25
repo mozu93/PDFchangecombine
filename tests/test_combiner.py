@@ -286,5 +286,58 @@ class TestPDFCombiner:
                 assert spans[0]["size"] == pytest.approx(20 * 4 / 3, rel=0.002)
 
 
+class TestOverwriteOutput:
+    """出力時の上書き（overwriteパラメータ）のテスト。
+
+    同じファイル名で繰り返し処理すると (2).pdf のような連番ファイルが
+    増え続けて整理しづらいというフィードバックを受けて追加した。
+    overwrite=Trueなら、同名ファイルがあってもその名前のまま上書きする。
+    """
+
+    def setup_method(self):
+        self.combiner = PDFCombiner()
+
+    def test_add_document_numbers_overwrite_reuses_same_filename(self, tmp_path):
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        out_dir = tmp_path / "out"
+        src = src_dir / "a.pdf"
+        _create_test_pdf(str(src))
+
+        first = self.combiner.add_document_numbers(
+            [str(src)], "", "1", output_dir=str(out_dir),
+        )
+        assert first.success is True
+        first_output = first.processed_files[0]
+        assert Path(first_output).name == "a.pdf"
+
+        second = self.combiner.add_document_numbers(
+            [str(src)], "", "2", output_dir=str(out_dir), overwrite=True,
+        )
+        assert second.success is True
+        second_output = second.processed_files[0]
+
+        # overwrite=Trueなら (2).pdf のような連番が付かず、同じファイル名で上書きされる
+        assert second_output == first_output
+
+    def test_add_document_numbers_without_overwrite_appends_number(self, tmp_path):
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        out_dir = tmp_path / "out"
+        src = src_dir / "a.pdf"
+        _create_test_pdf(str(src))
+
+        first = self.combiner.add_document_numbers(
+            [str(src)], "", "1", output_dir=str(out_dir),
+        )
+        second = self.combiner.add_document_numbers(
+            [str(src)], "", "2", output_dir=str(out_dir),
+        )
+
+        # overwrite未指定（従来通り）なら別ファイル名になる
+        assert second.processed_files[0] != first.processed_files[0]
+        assert "(2)" in Path(second.processed_files[0]).name
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

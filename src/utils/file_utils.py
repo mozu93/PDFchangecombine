@@ -284,13 +284,15 @@ class OutputManager:
         return source_path.stem + target_extension
     
     @staticmethod
-    def get_output_file_path(source_file_path: str, output_dir: str = "") -> str:
+    def get_output_file_path(source_file_path: str, output_dir: str = "", overwrite: bool = False) -> str:
         """
         完全な出力ファイルパスの取得
 
         Args:
             source_file_path: 変換元ファイルパス
             output_dir: 出力先ディレクトリ（空文字の場合は従来通り「変換済」フォルダ）
+            overwrite: Trueの場合、同名ファイルが既にあってもそのまま同じ名前を返す
+                （呼び出し元がユーザーに上書き確認済みであることを前提とする）
 
         Returns:
             str: 完全な出力ファイルパス
@@ -298,14 +300,14 @@ class OutputManager:
         if output_dir:
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             output_filename = OutputManager.generate_output_filename(source_file_path)
-            return OutputManager.get_unique_output_path(output_dir, output_filename)
+            return OutputManager.get_unique_output_path(output_dir, output_filename, overwrite=overwrite)
         else:
             out_dir = OutputManager.create_output_directory(source_file_path)
             output_filename = OutputManager.generate_output_filename(source_file_path)
             return str(Path(out_dir) / output_filename)
 
     @staticmethod
-    def get_unique_output_path(output_dir: str, filename: str) -> str:
+    def get_unique_output_path(output_dir: str, filename: str, overwrite: bool = False) -> str:
         """
         重複しない出力ファイルパスを返す。
         同名ファイルが既に存在する場合は「ファイル名 (2).pdf」のように連番を付与する。
@@ -313,12 +315,14 @@ class OutputManager:
         Args:
             output_dir: 出力先ディレクトリ
             filename: 出力ファイル名（例: report.pdf）
+            overwrite: Trueの場合、同名ファイルが既にあってもそのまま同じ名前を返す
+                （呼び出し元がユーザーに上書き確認済みであることを前提とする）
 
         Returns:
-            str: 重複しない完全パス
+            str: 完全パス（overwrite=Falseかつ同名ファイルがあれば連番付き）
         """
         base = Path(output_dir) / filename
-        if not base.exists():
+        if overwrite or not base.exists():
             return str(base)
         stem = Path(filename).stem
         suffix = Path(filename).suffix

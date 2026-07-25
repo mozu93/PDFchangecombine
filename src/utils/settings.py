@@ -32,6 +32,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "auto_open_output_folder": True,
     "skip_confirm_document_number": False,
     "skip_confirm_pagenumber": False,
+    # バージョンアップ時のリリースノートポップアップ用（最後に見せたバージョン）
+    "last_seen_version": "",
 }
 
 

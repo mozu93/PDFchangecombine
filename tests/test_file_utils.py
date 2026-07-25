@@ -158,6 +158,38 @@ class TestOutputManager:
             assert output_path == str(expected_path)
             assert expected_dir.exists()  # ディレクトリが作成されることを確認
 
+    def test_get_unique_output_path_appends_number_when_exists(self):
+        """overwrite未指定（False）時は、同名ファイルがあれば(2)を付与する（既存動作）"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "report.pdf").touch()
+            result = OutputManager.get_unique_output_path(temp_dir, "report.pdf")
+            assert result == str(Path(temp_dir) / "report (2).pdf")
+
+    def test_get_unique_output_path_overwrite_reuses_same_name(self):
+        """overwrite=True時は、同名ファイルがあってもそのままの名前を返す"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "report.pdf").touch()
+            result = OutputManager.get_unique_output_path(temp_dir, "report.pdf", overwrite=True)
+            assert result == str(Path(temp_dir) / "report.pdf")
+
+    def test_get_unique_output_path_overwrite_no_existing_file(self):
+        """overwrite=Trueでも、既存ファイルが無ければそのままの名前を返す（従来通り）"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = OutputManager.get_unique_output_path(temp_dir, "report.pdf", overwrite=True)
+            assert result == str(Path(temp_dir) / "report.pdf")
+
+    def test_get_output_file_path_overwrite_reuses_same_name(self):
+        """get_output_file_pathもoverwrite=Trueを透過的に伝える"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = Path(temp_dir) / "test.docx"
+            test_file.touch()
+            out_dir = Path(temp_dir) / "out"
+            out_dir.mkdir()
+            (out_dir / "test.pdf").touch()
+
+            result = OutputManager.get_output_file_path(str(test_file), str(out_dir), overwrite=True)
+            assert result == str(out_dir / "test.pdf")
+
 
 from src.utils.security import InputValidator
 

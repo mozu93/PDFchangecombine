@@ -30,6 +30,7 @@ from ..config import (
     ALL_SUPPORTED_EXTENSIONS,
     CONVERSION_OUTPUT_FOLDER_NAME, DOCUMENT_OUTPUT_FOLDER_NAME,
     COMBINATION_OUTPUT_FOLDER_NAME, PAGENUMBER_OUTPUT_FOLDER_NAME,
+    APP_VERSION,
 )
 from ..utils.logger import logger
 from ..utils.drag_drop import drag_drop_handler
@@ -43,6 +44,8 @@ from .result_dialog import FailureDetailDialog
 from .completion_banner import CompletionBanner
 from .confirm_dialog import confirm_with_skip
 from .replace_dialog import ReplaceDocumentDialog
+from .release_notes_dialog import ReleaseNotesDialog
+from ..utils.release_notes import should_show_release_notes, find_release_notes_path
 from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
@@ -103,6 +106,8 @@ class UnifiedWindow:
         self.combination_document_metadata: Dict[str, dict] = {}
         # 直近に生成した結合済みPDF（資料差し替えダイアログの初期選択に使う）
         self._last_combination_output_path: str = ""
+        # リリースノートポップアップ用（最後に見せたバージョン。_apply_settingsで復元される）
+        self._last_seen_version: str = ""
 
         # PDF変換のキャンセル制御（ファイル境界で中断）
         self._conversion_cancel_event = threading.Event()
@@ -130,6 +135,9 @@ class UnifiedWindow:
 
         # 前回終了時の設定を復元
         self._load_user_settings()
+
+        # バージョンアップ時にリリースノートをポップアップ表示
+        self.root.after(300, self._check_release_notes)
 
         # エラーハンドラー設定
         error_handler.parent_window = self.root
@@ -1841,11 +1849,6 @@ class UnifiedWindow:
             if not result:
                 return
 
-            # UIを無効化
-            self._set_exec_btn_enabled(self.document_execute_btn, False, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
-            self.document_status.configure(text="資料NO挿入処理中...")
-            self.document_progress.set(0)
-
             # 別スレッドで処理実行
             rename_file = self.rename_file_var.get()
             a3_compat = self.a3_compat_var.get()
@@ -1853,7 +1856,23 @@ class UnifiedWindow:
             selected_font = self.doc_font_var.get()
             doc_font_size = int(self.doc_font_size_var.get())
             white_background = self.doc_white_background_var.get()
-            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages, doc_font_size, out_dir, white_background))
+
+            # 同名ファイルとの衝突チェック（ファイル名をそのまま維持する場合のみ。
+            # 「ファイル名変更」を有効にしている場合は資料番号を含む名前になるため対象外）
+            overwrite = False
+            if not rename_file:
+                candidates = [Path(out_dir) / Path(fp).name for fp in self.document_number_files]
+                overwrite_decision = self._resolve_overwrite(candidates)
+                if overwrite_decision is None:
+                    return
+                overwrite = overwrite_decision
+
+            # UIを無効化
+            self._set_exec_btn_enabled(self.document_execute_btn, False, CLR_DOC_PRIMARY, CLR_DOC_HOVER)
+            self.document_status.configure(text="資料NO挿入処理中...")
+            self.document_progress.set(0)
+
+            thread = threading.Thread(target=self._run_sequential_number_insertion, args=(prefix, numbering_type, number_value, rename_file, a3_compat, selected_font, insert_all_pages, doc_font_size, out_dir, white_background, overwrite))
             thread.daemon = True
             thread.start()
 
@@ -1865,7 +1884,7 @@ class UnifiedWindow:
                 "資料NO挿入処理の開始中にエラーが発生しました。"
             )
 
-    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False, doc_font_size: int = 20, out_dir: str = "", white_background: bool = False) -> None:
+    def _run_sequential_number_insertion(self, prefix: str, numbering_type: str, number_value: str, rename_file: bool = False, a3_portrait_compat: bool = False, selected_font: str = "メイリオ", insert_all_pages: bool = False, doc_font_size: int = 20, out_dir: str = "", white_background: bool = False, overwrite: bool = False) -> None:
         """挿入実行（別スレッド）"""
         try:
             self.pdf_combiner.set_user_font(selected_font)
@@ -1887,7 +1906,8 @@ class UnifiedWindow:
                     doc_font_size=doc_font_size,
                     output_dir=out_dir,
                     white_background=white_background,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    overwrite=overwrite,
                 )
             else:
                 # 番号方式をバックエンド内部名に変換
@@ -1915,7 +1935,8 @@ class UnifiedWindow:
                     insert_all_pages=insert_all_pages,
                     doc_font_size=doc_font_size,
                     white_background=white_background,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    overwrite=overwrite,
                 )
 
             # UI更新
@@ -2136,6 +2157,27 @@ class UnifiedWindow:
             return None
         return out_dir
 
+    def _resolve_overwrite(self, candidate_paths: List[Path]) -> Optional[bool]:
+        """出力候補パスが既存ファイルと衝突する場合、上書きするか確認する。
+
+        Returns:
+            False: 衝突なし（確認不要、従来通りの連番付与ロジックのままでよい）
+            True:  衝突ありで上書きを確認した
+            None:  衝突ありでユーザーがキャンセルした（呼び出し元は処理を中止する）
+        """
+        colliding = [p for p in candidate_paths if p.exists()]
+        if not colliding:
+            return False
+
+        preview = "\n".join(f"・{p.name}" for p in colliding[:10])
+        more = f"\n…他{len(colliding) - 10}件" if len(colliding) > 10 else ""
+        confirmed = messagebox.askyesno(
+            "上書き確認",
+            f"同じ名前のファイルが既に{len(colliding)}件存在します。\n\n{preview}{more}\n\n"
+            f"上書きしますか？\n（「いいえ」の場合は処理を中止します）"
+        )
+        return True if confirmed else None
+
     # ── 変換タブ ─────────────────────────────────────────────────
     def _change_conversion_output_dir(self) -> None:
         d = fd.askdirectory(title="変換ファイルの出力先フォルダを選択")
@@ -2242,6 +2284,12 @@ class UnifiedWindow:
         if not out_dir:
             return
 
+        # 同名ファイルとの衝突チェック（変換後は常に「元ファイル名.pdf」になる）
+        candidates = [Path(out_dir) / (Path(fp).stem + ".pdf") for fp in files_to_convert]
+        overwrite = self._resolve_overwrite(candidates)
+        if overwrite is None:
+            return
+
         # 再実行対象のステータス表示をリセット
         for fp in files_to_convert:
             self.conversion_draggable_list.set_status(fp, None)
@@ -2253,7 +2301,7 @@ class UnifiedWindow:
         self.conversion_progress.set(0)
 
         # 別スレッドで変換実行
-        thread = threading.Thread(target=self._run_conversion, args=(list(files_to_convert), out_dir))
+        thread = threading.Thread(target=self._run_conversion, args=(list(files_to_convert), out_dir, overwrite))
         thread.daemon = True
         thread.start()
 
@@ -2282,7 +2330,7 @@ class UnifiedWindow:
         self.conversion_convert_btn.configure(state="disabled")
         self.conversion_status.configure(text="キャンセル中...（現在のファイル完了後に停止します）")
 
-    def _run_conversion(self, files_to_convert: List[str], out_dir: str) -> None:
+    def _run_conversion(self, files_to_convert: List[str], out_dir: str, overwrite: bool = False) -> None:
         """変換実行（別スレッド） - 順次処理でRPCエラーを回避"""
         try:
             total_files = len(files_to_convert)
@@ -2301,7 +2349,7 @@ class UnifiedWindow:
 
                 # 単一ファイル変換（順次処理）
                 split_sheets = self.split_excel_sheets_var.get()
-                result = self.pdf_converter._convert_single_file(file_path, split_sheets, out_dir)
+                result = self.pdf_converter._convert_single_file(file_path, split_sheets, out_dir, overwrite)
                 results.append(result)
 
                 # 完了時の進捗更新
@@ -2424,9 +2472,12 @@ class UnifiedWindow:
         if not out_dir:
             return
 
-        # 先頭ファイル名から出力ファイル名を生成（同名があれば連番付与）
+        # 先頭ファイル名から出力ファイル名を生成（同名があれば上書き確認、なければ連番付与）
         filename = f"【結合】{Path(self.combination_files[0]).stem}.pdf"
-        output_path = OutputManager.get_unique_output_path(out_dir, filename)
+        overwrite = self._resolve_overwrite([Path(out_dir) / filename])
+        if overwrite is None:
+            return
+        output_path = OutputManager.get_unique_output_path(out_dir, filename, overwrite=overwrite)
 
         # UIを無効化
         self._set_exec_btn_enabled(self.combination_combine_btn, False, CLR_COMB_PRIMARY, CLR_COMB_HOVER)
@@ -2854,6 +2905,10 @@ class UnifiedWindow:
         if not confirmed:
             return
 
+        overwrite = self._resolve_overwrite([Path(out_dir) / Path(pdf_path).name])
+        if overwrite is None:
+            return
+
         self._set_exec_btn_enabled(self.pn_execute_btn, False, CLR_PN_PRIMARY, CLR_PN_HOVER)
         self.pn_preview_btn.configure(state="disabled")
         self.pn_status.configure(text="処理中...")
@@ -2863,11 +2918,11 @@ class UnifiedWindow:
         selected_font = self.pn_font_var.get()
         threading.Thread(
             target=self._run_pagenumber_insertion,
-            args=(pdf_path, start_page, start_number, binding_compat, selected_font, out_dir),
+            args=(pdf_path, start_page, start_number, binding_compat, selected_font, out_dir, overwrite),
             daemon=True
         ).start()
 
-    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False, selected_font: str = "メイリオ", out_dir: str = "") -> None:
+    def _run_pagenumber_insertion(self, pdf_path: str, start_page: int, start_number: int, binding_compat: bool = False, selected_font: str = "メイリオ", out_dir: str = "", overwrite: bool = False) -> None:
         tmp_path = None
         try:
             self.pdf_combiner.set_user_font(selected_font)
@@ -2897,8 +2952,9 @@ class UnifiedWindow:
                 # 出力先ディレクトリを決定（未設定なら元ファイルと同じフォルダ）
                 effective_out_dir = out_dir or str(pdf_path_obj.parent)
                 Path(effective_out_dir).mkdir(parents=True, exist_ok=True)
-                output_path = OutputManager.get_unique_output_path(effective_out_dir, pdf_path_obj.name)
-                # 一時ファイルを出力先へ移動（元ファイルは上書きしない）
+                output_path = OutputManager.get_unique_output_path(
+                    effective_out_dir, pdf_path_obj.name, overwrite=overwrite)
+                # 一時ファイルを出力先へ移動（変換元ファイル自体は上書きしない）
                 shutil.move(tmp_path, output_path)
                 tmp_path = None
                 result.output_path = output_path
@@ -3000,6 +3056,21 @@ class UnifiedWindow:
         s = load_settings()
         self._apply_settings(s)
 
+    def _check_release_notes(self) -> None:
+        """バージョンアップを検知したら、リリースノートをポップアップ表示する"""
+        last_seen = self._last_seen_version
+        if should_show_release_notes(APP_VERSION, last_seen):
+            project_root = Path(__file__).parent.parent.parent
+            notes_path = find_release_notes_path(project_root, APP_VERSION)
+            if notes_path:
+                content = notes_path.read_text(encoding="utf-8")
+                ReleaseNotesDialog(self.root, APP_VERSION, content)
+
+        # 表示の有無に関わらず、今回のバージョンを「見せた」ことにして記録する
+        # （通知ファイルが無い/初回インストール時も次回以降ポップアップし続けないようにする）
+        self._last_seen_version = APP_VERSION
+        self._save_user_settings()
+
     def _apply_settings(self, s: dict) -> None:
         """設定辞書の内容をUIへ反映する"""
         self._update_conversion_output_dir_label()
@@ -3022,11 +3093,13 @@ class UnifiedWindow:
         self.auto_open_output_folder_var.set(s.get("auto_open_output_folder", True))
         self.skip_confirm_document_number = s.get("skip_confirm_document_number", False)
         self.skip_confirm_pagenumber = s.get("skip_confirm_pagenumber", False)
+        self._last_seen_version = s.get("last_seen_version", "")
         self._toggle_page_number_options()
 
     def _collect_current_settings(self) -> dict:
         """現在のUI状態から設定辞書を作成する"""
         return {
+            "last_seen_version": self._last_seen_version,
             "split_excel_sheets": self.split_excel_sheets_var.get(),
             "doc_font": self.doc_font_var.get(),
             "doc_font_size": self.doc_font_size_var.get(),
