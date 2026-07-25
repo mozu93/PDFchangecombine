@@ -12,10 +12,7 @@ from typing import Any, Dict
 from ..config import APP_NAME
 from .logger import logger
 
-if os.name == 'nt':
-    _SETTINGS_DIR = Path(os.environ.get('APPDATA', '')) / APP_NAME
-else:
-    _SETTINGS_DIR = Path.home() / '.config' / APP_NAME
+_SETTINGS_DIR = Path(os.environ.get('APPDATA', '')) / APP_NAME
 
 SETTINGS_PATH = _SETTINGS_DIR / 'settings.json'
 

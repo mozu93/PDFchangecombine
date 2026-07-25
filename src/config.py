@@ -51,10 +51,7 @@ LOG_RETENTION_DAYS = 30
 LOG_LEVELS = ['INFO', 'WARN', 'ERROR']
 
 # ログファイル保存先
-if os.name == 'nt':  # Windows
-    LOG_DIR = Path(os.environ.get('APPDATA', '')) / APP_NAME / 'logs'
-else:  # macOS/Linux
-    LOG_DIR = Path.home() / 'Library' / 'Logs' / APP_NAME
+LOG_DIR = Path(os.environ.get('APPDATA', '')) / APP_NAME / 'logs'
 
 # 性能設定 (要件定義書 5.3)
 MAX_STARTUP_TIME_SECONDS = 5

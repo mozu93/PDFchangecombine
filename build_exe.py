@@ -123,11 +123,10 @@ def build_executable():
         str(PROJECT_ROOT / 'src' / 'main.py')
     ]
     
-    # Windowsの場合はバージョン情報追加
-    if sys.platform.startswith('win'):
-        version_file = create_version_file()
-        if version_file.exists():
-            cmd.append(f'--version-file={version_file}')
+    # バージョン情報追加
+    version_file = create_version_file()
+    if version_file.exists():
+        cmd.append(f'--version-file={version_file}')
     
     # ビルド実行
     print(f"実行コマンド: {' '.join(cmd)}")
@@ -185,16 +184,9 @@ def verify_build():
     print("\\nビルド結果検証中...")
 
     # ワンフォルダ形式の場合のパス
-    if sys.platform.startswith('win'):
-        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter' / 'PDFConverter.exe'
-        dist_folder = PROJECT_ROOT / 'dist' / 'PDFConverter'
-    elif sys.platform.startswith('darwin'):
-        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter' / 'PDFConverter'  # macOS
-        dist_folder = PROJECT_ROOT / 'dist' / 'PDFConverter'
-    else:
-        exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter' / 'PDFConverter'  # Linux
-        dist_folder = PROJECT_ROOT / 'dist' / 'PDFConverter'
-    
+    exe_path = PROJECT_ROOT / 'dist' / 'PDFConverter' / 'PDFConverter.exe'
+    dist_folder = PROJECT_ROOT / 'dist' / 'PDFConverter'
+
     if exe_path.exists():
         file_size = exe_path.stat().st_size / (1024 * 1024)  # MB
         print(f"実行ファイル生成成功: {exe_path}")
@@ -207,13 +199,6 @@ def verify_build():
             file_count = len(list(dist_folder.rglob('*')))
             print(f"配布フォルダサイズ: {total_size_mb:.1f} MB ({file_count} ファイル)")
             print(f"配布フォルダ: {dist_folder}")
-
-        # 実行権限確認 (Unix系)
-        if not sys.platform.startswith('win'):
-            if os.access(exe_path, os.X_OK):
-                print("実行権限: OK")
-            else:
-                print("実行権限: なし（chmod +x が必要）")
 
         return True
     else:
@@ -249,8 +234,7 @@ def main():
         print("  5. エラーハンドリングの確認")
         
         # 配布準備
-        if sys.platform.startswith('win'):
-            print("  6. コード署名の実施 (signtool)")
+        print("  6. コード署名の実施 (signtool)")
         
     else:
         print("\\nビルド検証に失敗しました")
