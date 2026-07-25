@@ -91,6 +91,11 @@ class AppLogger:
             if self._logger:
                 self._logger.error(f"ログクリーンアップエラー: {e}")
     
+    def debug(self, message: str) -> None:
+        """DEBUGレベルログ出力"""
+        if self._logger:
+            self._logger.debug(message)
+
     def info(self, message: str) -> None:
         """INFOレベルログ出力"""
         if self._logger:

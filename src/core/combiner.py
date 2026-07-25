@@ -43,6 +43,9 @@ class CombineResult:
         self.processed_files = processed_files or []
         # 失敗したファイルの (パス, 理由) のリスト（対応していない処理では常に空）
         self.failed_files = failed_files or []
+        # 資料NO挿入結果のファイルパス → {"document_number": "資料1", "stamp_settings": {...}}
+        # combine_pdfs へそのまま渡すと、差し替え機能用の構成情報として埋め込まれる
+        self.document_metadata: Dict[str, dict] = {}
         self.processing_time = 0.0
         self.total_pages = 0
 
@@ -62,6 +65,7 @@ class PDFCombiner:
 
     def __init__(self):
         logger.info("PDFコンバイナー初期化完了")
+        self.font_display_name: Optional[str] = None
         self._register_ms_gothic_font()
 
     def _register_ms_gothic_font(self):
@@ -87,6 +91,7 @@ class PDFCombiner:
 
                         logger.info(f"{display_name}フォントを登録しました: {font_path}")
                         self.font_name = font_name
+                        self.font_display_name = display_name
                         return
                     except Exception as e:
                         logger.warning(f"{display_name}フォント登録失敗: {e}")
@@ -98,6 +103,7 @@ class PDFCombiner:
         except Exception as e:
             logger.warning(f"日本語フォント登録エラー: {e}。Courierで代替します")
             self.font_name = "Courier"
+            self.font_display_name = None
 
     @classmethod
     def _document_number_page_scale(cls, page_width: float, page_height: float) -> float:
@@ -148,6 +154,7 @@ class PDFCombiner:
                 else:
                     pdfmetrics.registerFont(TTFont(font_name, font_path))
                 self.font_name = font_name
+                self.font_display_name = display_name
                 logger.info(f"ユーザー選択フォント設定: {display_name} → {font_name} ({font_path})")
                 return True
             except Exception as e:
@@ -842,6 +849,19 @@ class PDFCombiner:
                         with fitz.open(new_path) as doc:
                             total_pages += len(doc)
 
+                        result.document_metadata[new_path] = {
+                            "document_number": f"{document_prefix}{document_number}",
+                            "stamp_settings": {
+                                "document_prefix": document_prefix,
+                                "number_part": document_number,
+                                "font_display_name": self.font_display_name,
+                                "doc_font_size": doc_font_size,
+                                "white_background": white_background,
+                                "a3_portrait_compat": a3_portrait_compat,
+                                "insert_all_pages": insert_all_pages,
+                            },
+                        }
+
                         logger.info(f"資料NO挿入完了: {Path(new_path).name}")
                     else:
                         failed_files.append((pdf_path, "処理失敗"))
@@ -981,6 +1001,19 @@ class PDFCombiner:
                         # ページ数をカウント
                         with fitz.open(new_path) as doc:
                             total_pages += len(doc)
+
+                        result.document_metadata[new_path] = {
+                            "document_number": f"{document_prefix}{document_number}",
+                            "stamp_settings": {
+                                "document_prefix": document_prefix,
+                                "number_part": document_number,
+                                "font_display_name": self.font_display_name,
+                                "doc_font_size": doc_font_size,
+                                "white_background": white_background,
+                                "a3_portrait_compat": a3_portrait_compat,
+                                "insert_all_pages": insert_all_pages,
+                            },
+                        }
 
                         logger.info(f"資料NO挿入完了: {Path(new_path).name} → {document_number}")
                     else:

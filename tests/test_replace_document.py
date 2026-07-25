@@ -228,3 +228,69 @@ class TestReplaceDocumentErrorHandling:
         combiner.replace_document_in_combined_pdf(str(out), "資料2", str(replacement), str(out2))
 
         assert out.read_bytes() == original_bytes
+
+
+class TestDocumentMetadataPopulation:
+    """資料NO挿入結果からcombine_pdfsへ渡すdocument_metadataが正しく組み立てられること
+
+    (GUI側は _on_document_number_complete でこのresult.document_metadataをそのまま
+    _send_files_to_combination_tab 経由でcombine_pdfsへ渡す)
+    """
+
+    def test_sequential_numbering_populates_metadata_per_file(self, combiner, tmp_path):
+        a = _make_pdf(tmp_path / "a.pdf", 1)
+        b = _make_pdf(tmp_path / "b.pdf", 1)
+
+        result = combiner.add_sequential_document_numbers(
+            pdf_paths=[str(a), str(b)], output_dir=str(tmp_path),
+            numbering_type="basic", document_prefix="資料",
+        )
+        assert result.success is True
+        assert len(result.document_metadata) == 2
+
+        labels = {meta["document_number"] for meta in result.document_metadata.values()}
+        assert labels == {"資料1", "資料2"}
+
+        for new_path in result.processed_files:
+            meta = result.document_metadata[new_path]
+            assert meta["stamp_settings"]["document_prefix"] == "資料"
+            assert meta["stamp_settings"]["number_part"] in {"1", "2"}
+
+    def test_fixed_number_populates_metadata(self, combiner, tmp_path):
+        a = _make_pdf(tmp_path / "a.pdf", 1)
+
+        result = combiner.add_document_numbers(
+            pdf_paths=[str(a)], output_path="",
+            document_number="5", document_prefix="資料",
+            output_dir=str(tmp_path),
+        )
+        assert result.success is True
+        assert len(result.document_metadata) == 1
+
+        new_path = result.processed_files[0]
+        meta = result.document_metadata[new_path]
+        assert meta["document_number"] == "資料5"
+        assert meta["stamp_settings"]["number_part"] == "5"
+
+    def test_metadata_flows_into_combine_manifest(self, combiner, tmp_path):
+        """資料NO挿入 → 結合 の一連の流れで、構成情報が正しく埋め込まれること"""
+        a = _make_pdf(tmp_path / "a.pdf", 1)
+        b = _make_pdf(tmp_path / "b.pdf", 1)
+
+        numbering_result = combiner.add_sequential_document_numbers(
+            pdf_paths=[str(a), str(b)], output_dir=str(tmp_path),
+            numbering_type="basic", document_prefix="資料",
+        )
+        assert numbering_result.success is True
+
+        out = tmp_path / "combined.pdf"
+        combine_result = combiner.combine_pdfs(
+            numbering_result.processed_files, str(out),
+            document_metadata=numbering_result.document_metadata,
+        )
+        assert combine_result.success is True
+
+        manifest_result = combiner.load_combine_manifest(str(out))
+        assert manifest_result.success is True
+        labels = [d["document_number"] for d in manifest_result.manifest["documents"]]
+        assert labels == ["資料1", "資料2"]
