@@ -4,13 +4,31 @@ PDF結合コアモジュール
 """
 
 import os
+import json
+import shutil
+import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 import time
 import fitz  # PyMuPDF
 
 from ..utils.logger import logger
 from ..utils.file_utils import FileValidator, OutputManager
+
+# 結合済みPDFに埋め込む構成情報（差し替え機能用）
+_MANIFEST_EMBED_NAME = "pdfcc_manifest.json"
+_CLEAN_MASTER_EMBED_NAME = "pdfcc_clean_master.pdf"
+_MANIFEST_VERSION = 1
+
+
+class ManifestLoadResult:
+    """結合済みPDFに埋め込まれた構成情報の読み込み結果"""
+
+    def __init__(self, success: bool = False, manifest: Optional[dict] = None,
+                 error_message: str = ""):
+        self.success = success
+        self.manifest = manifest
+        self.error_message = error_message
 
 
 class CombineResult:
@@ -137,15 +155,207 @@ class PDFCombiner:
         logger.warning(f"フォント設定失敗（候補なし）: {display_name}")
         return False
 
+    def _append_pdf_with_optional_blank(self, writer: fitz.Document, reader: fitz.Document,
+                                       add_blank_page: bool) -> bool:
+        """readerの全ページをwriterへ追加する。
+
+        add_blank_page時、ページ数が奇数なら末尾に白紙ページを1枚追加する（回転・サイズは最終ページに合わせる）。
+        戻り値: 白紙ページを追加したか
+        """
+        if add_blank_page and len(reader) % 2 != 0:
+            with fitz.open() as temp_doc:
+                temp_doc.insert_pdf(reader)
+
+                last_page_index = len(temp_doc) - 1
+                last_page = temp_doc[last_page_index]
+
+                rotation = last_page.rotation
+                mediabox = last_page.mediabox
+
+                temp_doc.new_page(width=mediabox.width, height=mediabox.height)
+
+                if rotation != 0:
+                    temp_doc[len(temp_doc) - 1].set_rotation(rotation)
+
+                writer.insert_pdf(temp_doc)
+            return True
+        else:
+            writer.insert_pdf(reader)
+            return False
+
+    def _apply_page_numbers(self, writer: fitz.Document, start_page: int, start_number: int,
+                           binding_compat: bool) -> fitz.Document:
+        """結合済みdocの各ページ下部（綴じ位置対応）にページ番号を描画したdocを返す。
+
+        内部でページを複製し直すため、戻り値のdocを以後の処理で使用すること
+        （引数のwriterはこのメソッド内でcloseされる）。
+        """
+        logger.info("ページ番号の挿入を開始")
+
+        # 一度クリーンなPDFを作成してからページ番号を挿入する
+        with fitz.open() as clean_doc:
+            clean_doc.insert_pdf(writer)
+            writer.close()
+            new_writer = fitz.open()
+            new_writer.insert_pdf(clean_doc)
+
+        font_name = "cour"
+
+        for page_num in range(start_page - 1, len(new_writer)):
+            page = new_writer[page_num]
+            page_number_text = str(start_number + page_num - (start_page - 1))
+
+            # 回転を考慮したページ番号配置
+            original_rotation = page.rotation
+
+            # 回転を一時的に0度にして正しい向きでページ番号を挿入
+            if original_rotation != 0:
+                page.set_rotation(0)
+
+            # 0度状態での座標計算（テキストが正しい向きで表示される）
+            text_width = fitz.get_text_length(page_number_text, fontname=font_name, fontsize=12)
+
+            # 0度状態でのページサイズ取得
+            page_width = page.rect.width
+            page_height = page.rect.height
+
+            # 回転別の正確な座標計算とrotateパラメータ
+            if original_rotation == 0:
+                # 左綴じ対応モード: ページサイズで挿入位置を切り替え
+                is_a3_landscape = page_width > page_height and page_width > 1100
+                is_left_binding = (
+                    (page_width > page_height and page_width <= 1100) or
+                    (page_height > page_width and page_height > 1000)
+                )
+                if binding_compat and is_a3_landscape:
+                    # A3横 Z折り（片袖折り）: 右端から75mm
+                    # Z折り時は右半分が表面になるため、右寄せで配置
+                    x = page_width - (75 * 72 / 25.4) - text_width
+                    y = page_height - 28.35
+                    rotate_param = 0
+                elif binding_compat and is_left_binding:
+                    # A4横・A3縦 左綴じ対応: 左端中央に90°CW回転で挿入
+                    x = 28.35
+                    y = (page_height - text_width) / 2
+                    rotate_param = -90
+                else:
+                    # 通常: 下部中央
+                    x = (page_width - text_width) / 2
+                    y = page_height - 28.35
+                    rotate_param = 0
+            elif original_rotation == 90:
+                # 90度回転: 右側中央が下部になる
+                x = page_width - 28.35  # 右端から10mm
+                y = (page_height - text_width) / 2  # 垂直中央
+                rotate_param = 90
+            elif original_rotation == 180:
+                # 180度回転: 上部中央が下部になる
+                x = (page_width - text_width) / 2  # 水平中央
+                y = 28.35  # 上端から10mm
+                rotate_param = 180
+            elif original_rotation == 270:
+                # 270度回転: 左側中央が下部になる
+                x = 28.35  # 左端から10mm
+                y = (page_height - text_width) / 2  # 垂直中央
+                rotate_param = -90
+            else:
+                # その他の角度: デフォルト
+                x = (page_width - text_width) / 2  # 水平中央
+                y = page_height - 28.35  # 下端から10mm
+                rotate_param = 0
+
+            logger.info(f"ページ番号座標（元回転{original_rotation}度、0度状態での配置）: x={x:.1f}, y={y:.1f}, rotate={rotate_param}")
+
+            # ページ番号を挿入（全回転角度に対応）
+            page.insert_text((x, y),
+                             page_number_text,
+                             fontname=font_name,
+                             fontsize=12,
+                             color=(0, 0, 0),
+                             rotate=rotate_param)
+
+            # 回転を元に戻す
+            if original_rotation != 0:
+                page.set_rotation(original_rotation)
+
+        logger.info("ページ番号の挿入完了")
+        return new_writer
+
+    def _embed_manifest(self, doc: fitz.Document, manifest: dict,
+                        clean_master_bytes: Optional[bytes] = None) -> None:
+        """構成情報（差し替え機能用）をPDF自体に埋め込む。
+
+        ファイル名・保存場所を変更してもPDFファイルと一体で保持されるよう、
+        サイドカーファイルではなくPDF内部の添付ファイル機能を使う。
+        """
+        try:
+            payload = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+            doc.embfile_add(_MANIFEST_EMBED_NAME, payload, filename=_MANIFEST_EMBED_NAME,
+                           desc="PDF変換・結合ツール 構成情報（自動生成・編集しないでください）")
+            if clean_master_bytes is not None:
+                doc.embfile_add(_CLEAN_MASTER_EMBED_NAME, clean_master_bytes,
+                               filename=_CLEAN_MASTER_EMBED_NAME,
+                               desc="ページ番号挿入前のマスターPDF（差し替え機能用）")
+        except Exception as e:
+            # 埋め込みに失敗しても結合結果自体は有効なので、ログのみで継続する
+            logger.warning(f"構成情報の埋め込みに失敗しました: {e}")
+
+    def load_combine_manifest(self, pdf_path: str) -> ManifestLoadResult:
+        """結合済みPDFに埋め込まれた構成情報を読み込む（差し替え機能用）"""
+        result = ManifestLoadResult()
+        try:
+            with fitz.open(pdf_path) as doc:
+                if _MANIFEST_EMBED_NAME not in doc.embfile_names():
+                    result.error_message = (
+                        "このPDFには構成情報が含まれていないため、差し替え機能は使用できません。"
+                        "本アプリの「PDF結合」で作成したPDFを指定してください。"
+                    )
+                    return result
+
+                try:
+                    raw = doc.embfile_get(_MANIFEST_EMBED_NAME)
+                    manifest = json.loads(raw.decode("utf-8"))
+                except Exception as e:
+                    result.error_message = f"構成情報の読み込みに失敗しました: {e}"
+                    return result
+
+                documents = manifest.get("documents", [])
+                expected_total = sum(
+                    max(0, int(entry.get("page_end", 0)) - int(entry.get("page_start", 1)) + 1)
+                    for entry in documents
+                )
+                actual_total = doc.page_count
+                if expected_total != actual_total:
+                    result.error_message = (
+                        "構成情報と実際のページ数が一致しないため、差し替えできません"
+                        f"（構成情報: {expected_total}ページ / 実ファイル: {actual_total}ページ）。"
+                        "本アプリ以外でこのPDFが編集された可能性があります。"
+                    )
+                    return result
+
+                result.success = True
+                result.manifest = manifest
+
+        except Exception as e:
+            result.error_message = f"PDFの読み込みに失敗しました: {e}"
+
+        return result
+
     def combine_pdfs(self, pdf_paths: List[str], output_path: str,
                     add_blank_page: bool = False,
                     add_page_numbers: bool = False,
                     start_page: int = 1,
                     start_number: int = 1,
                     progress_callback: Optional[callable] = None,
-                    page_number_binding_compat: bool = False) -> CombineResult:
+                    page_number_binding_compat: bool = False,
+                    document_metadata: Optional[Dict[str, dict]] = None) -> CombineResult:
         """
         複数PDFファイルの結合（要件定義書 F-204）
+
+        Args:
+            document_metadata: {ファイルパス: {"document_number": "資料1", "stamp_settings": {...}}}
+                差し替え機能用の構成情報として埋め込む。省略時は構成情報のうち
+                資料番号・スタンプ設定を伴わない結合として記録される。
         """
         start_time = time.time()
         result = CombineResult(output_path=output_path)
@@ -164,50 +374,38 @@ class PDFCombiner:
             writer = fitz.open()
             processed_files = []
             failed_files = []
+            manifest_entries = []
+            current_page_count = 0
 
-            try:
-                for i, pdf_path in enumerate(valid_files):
-                    try:
-                        if progress_callback:
-                            progress = (i + 1) / len(valid_files) * 90 # 結合処理を90%とする
-                            progress_callback(f"結合中: {Path(pdf_path).name}", progress)
+            for i, pdf_path in enumerate(valid_files):
+                try:
+                    if progress_callback:
+                        progress = (i + 1) / len(valid_files) * 90  # 結合処理を90%とする
+                        progress_callback(f"結合中: {Path(pdf_path).name}", progress)
 
-                        with fitz.open(pdf_path) as reader:
-                            if add_blank_page and len(reader) % 2 != 0:
-                                with fitz.open() as temp_doc:
-                                    temp_doc.insert_pdf(reader)
+                    pages_before = len(writer)
+                    with fitz.open(pdf_path) as reader:
+                        blank_added = self._append_pdf_with_optional_blank(writer, reader, add_blank_page)
+                    pages_added = len(writer) - pages_before
 
-                                    # 最終ページの情報を安全に取得
-                                    last_page_index = len(temp_doc) - 1
-                                    last_page = temp_doc[last_page_index]
+                    entry_meta = (document_metadata or {}).get(pdf_path, {})
+                    manifest_entries.append({
+                        "document_number": entry_meta.get("document_number", ""),
+                        "source_filename": Path(pdf_path).name,
+                        "page_start": current_page_count + 1,
+                        "page_end": current_page_count + pages_added,
+                        "blank_page_added": blank_added,
+                        "stamp_settings": entry_meta.get("stamp_settings"),
+                    })
+                    current_page_count += pages_added
 
-                                    # 回転とサイズ情報を取得
-                                    rotation = last_page.rotation
-                                    mediabox = last_page.mediabox
+                    processed_files.append(pdf_path)
+                    logger.info(f"PDF追加完了: {Path(pdf_path).name}")
 
-                                    # 回転を考慮したサイズで白紙ページを作成
-                                    blank_page = temp_doc.new_page(width=mediabox.width, height=mediabox.height)
-
-                                    # 回転情報を適用
-                                    if rotation != 0:
-                                        blank_page_index = len(temp_doc) - 1
-                                        temp_doc[blank_page_index].set_rotation(rotation)
-
-                                    writer.insert_pdf(temp_doc)
-                                    logger.info(f"白紙ページ追加（回転{rotation}度対応）: {Path(pdf_path).name}")
-                            else:
-                                writer.insert_pdf(reader)
-
-                        processed_files.append(pdf_path)
-                        logger.info(f"PDF追加完了: {Path(pdf_path).name}")
-
-                    except Exception as e:
-                        failed_files.append((pdf_path, str(e)))
-                        logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
-                        continue
-
-            finally:
-                pass  # try/finallyブロックの終了
+                except Exception as e:
+                    failed_files.append((pdf_path, str(e)))
+                    logger.error(f"PDF処理エラー: {pdf_path} - {str(e)}")
+                    continue
 
             result.failed_files = failed_files
 
@@ -218,98 +416,26 @@ class PDFCombiner:
                     result.error_message += f"\n\n失敗詳細:\n{error_details}"
                 return result
 
-            # ページ番号挿入
+            # ページ番号挿入（差し替え時の再計算用に、挿入前のクリーンな状態も保持する）
+            clean_master_bytes = None
             if add_page_numbers:
-                logger.info("ページ番号の挿入を開始")
+                clean_master_bytes = writer.tobytes()
+                writer = self._apply_page_numbers(writer, start_page, start_number, page_number_binding_compat)
 
-                # 一度クリーンなPDFを作成してからページ番号を挿入する
-                with fitz.open() as clean_doc:
-                    clean_doc.insert_pdf(writer)
-                    writer.close()
-                    writer = fitz.open()
-                    writer.insert_pdf(clean_doc)
-
-                font_name = "cour"
-
-                for page_num in range(start_page - 1, len(writer)):
-                    page = writer[page_num]
-                    page_number_text = str(start_number + page_num - (start_page - 1))
-
-                    # 回転を考慮したページ番号配置
-                    original_rotation = page.rotation
-
-                    # 回転を一時的に0度にして正しい向きでページ番号を挿入
-                    if original_rotation != 0:
-                        page.set_rotation(0)
-
-                    # 0度状態での座標計算（テキストが正しい向きで表示される）
-                    text_width = fitz.get_text_length(page_number_text, fontname=font_name, fontsize=12)
-
-                    # 0度状態でのページサイズ取得
-                    page_width = page.rect.width
-                    page_height = page.rect.height
-
-                    # 回転別の正確な座標計算とrotateパラメータ
-                    if original_rotation == 0:
-                        # 左綴じ対応モード: ページサイズで挿入位置を切り替え
-                        is_a3_landscape = page_width > page_height and page_width > 1100
-                        is_left_binding = (
-                            (page_width > page_height and page_width <= 1100) or
-                            (page_height > page_width and page_height > 1000)
-                        )
-                        if page_number_binding_compat and is_a3_landscape:
-                            # A3横 Z折り（片袖折り）: 右端から75mm
-                            # Z折り時は右半分が表面になるため、右寄せで配置
-                            x = page_width - (75 * 72 / 25.4) - text_width
-                            y = page_height - 28.35
-                            rotate_param = 0
-                        elif page_number_binding_compat and is_left_binding:
-                            # A4横・A3縦 左綴じ対応: 左端中央に90°CW回転で挿入
-                            x = 28.35
-                            y = (page_height - text_width) / 2
-                            rotate_param = -90
-                        else:
-                            # 通常: 下部中央
-                            x = (page_width - text_width) / 2
-                            y = page_height - 28.35
-                            rotate_param = 0
-                    elif original_rotation == 90:
-                        # 90度回転: 右側中央が下部になる
-                        x = page_width - 28.35  # 右端から10mm
-                        y = (page_height - text_width) / 2  # 垂直中央
-                        rotate_param = 90
-                    elif original_rotation == 180:
-                        # 180度回転: 上部中央が下部になる
-                        x = (page_width - text_width) / 2  # 水平中央
-                        y = 28.35  # 上端から10mm
-                        rotate_param = 180
-                    elif original_rotation == 270:
-                        # 270度回転: 左側中央が下部になる
-                        x = 28.35  # 左端から10mm
-                        y = (page_height - text_width) / 2  # 垂直中央
-                        rotate_param = -90
-                    else:
-                        # その他の角度: デフォルト
-                        x = (page_width - text_width) / 2  # 水平中央
-                        y = page_height - 28.35  # 下端から10mm
-                        rotate_param = 0
-
-                    logger.info(f"ページ番号座標（元回転{original_rotation}度、0度状態での配置）: x={x:.1f}, y={y:.1f}, rotate={rotate_param}")
-
-                    # ページ番号を挿入（全回転角度に対応）
-                    page.insert_text((x, y),
-                                     page_number_text,
-                                     fontname=font_name,
-                                     fontsize=12,
-                                     color=(0, 0, 0),
-                                     rotate=rotate_param)
-
-                    # 回転を元に戻す
-                    if original_rotation != 0:
-                        page.set_rotation(original_rotation)
-
-                    # logger.debug(f"ページ番号挿入: ページ{page_num+1}, 回転{original_rotation}度")
-                logger.info("ページ番号の挿入完了")
+            # 構成情報（差し替え機能用）を埋め込む
+            manifest = {
+                "app": "PDFchangecombine",
+                "manifest_version": _MANIFEST_VERSION,
+                "combine_settings": {
+                    "add_blank_page": add_blank_page,
+                    "add_page_numbers": add_page_numbers,
+                    "start_page": start_page,
+                    "start_number": start_number,
+                    "page_number_binding_compat": page_number_binding_compat,
+                },
+                "documents": manifest_entries,
+            }
+            self._embed_manifest(writer, manifest, clean_master_bytes=clean_master_bytes)
 
             # 結合PDFファイル保存
             self._ensure_output_directory(output_path)
@@ -364,7 +490,171 @@ class PDFCombiner:
             result.processing_time = time.time() - start_time
 
         return result
-        
+
+    def replace_document_in_combined_pdf(self, combined_pdf_path: str, document_number: str,
+                                        new_source_path: str, output_path: str,
+                                        progress_callback: Optional[callable] = None) -> CombineResult:
+        """結合済みPDFの中の1資料だけを別ファイルに差し替える。
+
+        資料番号スタンプ・白紙ページ判定・ページ番号footerを、元の結合時に使われた
+        設定（PDF自体に埋め込まれた構成情報）から再現する。差し替え対象のページ数が
+        変わっても、以降の資料のページ番号を自動的に振り直す。
+
+        Args:
+            combined_pdf_path: 差し替え元となる結合済みPDF（本アプリ作成のもの）
+            document_number: 差し替える資料の番号ラベル（例: "資料3"）
+            new_source_path: 差し替え後のPDF（資料NO未挿入の変換直後のファイル）
+            output_path: 差し替え後の結合済みPDFの出力先（非破壊、新規ファイルとして出力）
+        """
+        start_time = time.time()
+        result = CombineResult(output_path=output_path)
+
+        if not Path(new_source_path).is_file():
+            result.error_message = f"差し替えファイルが見つかりません: {new_source_path}"
+            return result
+
+        if not self._validate_pdf_files([new_source_path]):
+            result.error_message = "差し替えファイルが有効なPDFではありません"
+            return result
+
+        manifest_result = self.load_combine_manifest(combined_pdf_path)
+        if not manifest_result.success:
+            result.error_message = manifest_result.error_message
+            return result
+
+        manifest = manifest_result.manifest
+        documents = manifest.get("documents", [])
+        target_index = next(
+            (i for i, e in enumerate(documents) if e.get("document_number") == document_number), None
+        )
+        if target_index is None:
+            result.error_message = f"指定された資料番号が結合済みPDFに見つかりません: {document_number}"
+            return result
+
+        target_entry = documents[target_index]
+        combine_settings = manifest.get("combine_settings", {})
+        add_blank_page = combine_settings.get("add_blank_page", False)
+        add_page_numbers = combine_settings.get("add_page_numbers", False)
+        start_page = combine_settings.get("start_page", 1)
+        start_number = combine_settings.get("start_number", 1)
+        binding_compat = combine_settings.get("page_number_binding_compat", False)
+
+        base_doc = None
+        temp_dir = None
+        try:
+            if progress_callback:
+                progress_callback("差し替え準備中", 10)
+
+            # ページ番号挿入前の状態（クリーンマスター）を差し替えのベースにする
+            with fitz.open(combined_pdf_path) as combined_doc:
+                if add_page_numbers:
+                    if _CLEAN_MASTER_EMBED_NAME not in combined_doc.embfile_names():
+                        result.error_message = (
+                            "ページ番号なしのマスターPDFが見つからないため差し替えできません。"
+                        )
+                        return result
+                    base_bytes = combined_doc.embfile_get(_CLEAN_MASTER_EMBED_NAME)
+                    base_doc = fitz.open(stream=base_bytes, filetype="pdf")
+                else:
+                    base_doc = fitz.open()
+                    base_doc.insert_pdf(combined_doc)
+
+            # 差し替えファイルへ、元と同じ資料NOスタンプを再現する
+            stamp_settings = target_entry.get("stamp_settings")
+            temp_dir = tempfile.mkdtemp(prefix="pdfcc_replace_")
+
+            if stamp_settings:
+                original_font_name = self.font_name
+                try:
+                    font_display_name = stamp_settings.get("font_display_name")
+                    if font_display_name:
+                        self.set_user_font(font_display_name)
+                    stamped_path = self._process_single_pdf_to_dir(
+                        new_source_path,
+                        stamp_settings.get("number_part", ""),
+                        stamp_settings.get("document_prefix", "資料"),
+                        False,  # rename_file: 差し替えでは常に元ファイル名を維持
+                        stamp_settings.get("a3_portrait_compat", False),
+                        stamp_settings.get("insert_all_pages", False),
+                        stamp_settings.get("doc_font_size", 20),
+                        temp_dir,
+                        stamp_settings.get("white_background", False),
+                    )
+                finally:
+                    self.font_name = original_font_name
+
+                if not stamped_path:
+                    result.error_message = "差し替えファイルへの資料NO挿入に失敗しました"
+                    return result
+            else:
+                stamped_path = new_source_path
+
+            if progress_callback:
+                progress_callback("PDFを差し替え中", 50)
+
+            with fitz.open(stamped_path) as replacement_reader:
+                replacement_doc = fitz.open()
+                blank_added = self._append_pdf_with_optional_blank(
+                    replacement_doc, replacement_reader, add_blank_page
+                )
+                new_page_count = len(replacement_doc)
+
+                old_start = int(target_entry["page_start"])
+                old_end = int(target_entry["page_end"])
+
+                base_doc.delete_pages(from_page=old_start - 1, to_page=old_end - 1)
+                base_doc.insert_pdf(replacement_doc, start_at=old_start - 1)
+                replacement_doc.close()
+
+            # 構成情報のページ範囲を再計算（差し替え対象以降を必要に応じてシフト）
+            old_page_count = old_end - old_start + 1
+            delta = new_page_count - old_page_count
+            target_entry["page_end"] = old_start + new_page_count - 1
+            target_entry["blank_page_added"] = blank_added
+            target_entry["source_filename"] = Path(new_source_path).name
+            for i, entry in enumerate(documents):
+                if i > target_index:
+                    entry["page_start"] = int(entry["page_start"]) + delta
+                    entry["page_end"] = int(entry["page_end"]) + delta
+
+            if progress_callback:
+                progress_callback("ページ番号を再計算中", 75)
+
+            clean_master_bytes = None
+            if add_page_numbers:
+                clean_master_bytes = base_doc.tobytes()
+                final_doc = self._apply_page_numbers(base_doc, start_page, start_number, binding_compat)
+            else:
+                final_doc = base_doc
+
+            manifest["documents"] = documents
+            self._embed_manifest(final_doc, manifest, clean_master_bytes=clean_master_bytes)
+
+            self._ensure_output_directory(output_path)
+            final_doc.save(output_path, garbage=0, deflate=False)
+            result.total_pages = final_doc.page_count
+            final_doc.close()
+
+            result.success = True
+            result.output_path = output_path
+            result.processed_files = [new_source_path]
+
+            if progress_callback:
+                progress_callback("差し替え完了", 100)
+
+            logger.info(f"資料差し替え完了: {document_number} -> {Path(new_source_path).name}")
+
+        except Exception as e:
+            result.error_message = f"差し替え処理エラー: {str(e)}"
+            logger.error(f"資料差し替えエラー: {str(e)}", exc_info=True)
+
+        finally:
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            result.processing_time = time.time() - start_time
+
+        return result
+
     def _validate_pdf_files(self, pdf_paths: List[str]) -> List[str]:
         """PDF ファイル群の妥当性チェック"""
         valid_files = []
