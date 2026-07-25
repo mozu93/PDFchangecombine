@@ -13,7 +13,6 @@ import asyncio
 import threading
 from pathlib import Path
 import sys
-import subprocess
 import os
 import shutil
 import tempfile
@@ -1218,12 +1217,7 @@ class UnifiedWindow:
         """指定されたフォルダをエクスプローラーで開く"""
         import os
         try:
-            if sys.platform == "win32":
-                os.startfile(folder_path)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", folder_path])
-            else:
-                subprocess.Popen(["xdg-open", folder_path])
+            os.startfile(folder_path)
         except Exception as e:
             logger.error(f"フォルダを開けませんでした: {folder_path} - {e}")
             messagebox.showwarning("エラー", f"フォルダを開けませんでした。\n{folder_path}")

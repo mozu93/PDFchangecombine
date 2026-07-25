@@ -57,7 +57,7 @@ Microsoft Officeファイル（Word、Excel、PowerPoint）と画像ファイル
 ## 要件
 
 - Python 3.9以上
-- Windows 10+ / macOS 10.15+
+- Windows 10/11 (64bit)
 - 起動時間: 5秒以内
 - 変換時間: 10MBファイル 10秒以内
 - メモリ使用量: アイドル時 200MB未満
