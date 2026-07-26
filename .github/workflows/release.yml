@@ -55,16 +55,20 @@ jobs:
         shell: bash
         run: echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          {
+            echo "インストーラー（\`PDFConverter-setup.exe\`）をダウンロードして実行してください。"
+            echo ""
+            cat "RELEASE_NOTES_${{ steps.tag.outputs.TAG }}.md"
+          } > release_body.md
+
       - name: Create GitHub Release
         run: |
           gh release create ${{ steps.tag.outputs.TAG }} `
             dist\installer\PDFConverter-setup.exe `
             --title "PDF変換・結合ツール ${{ steps.tag.outputs.TAG }}" `
-            --notes "## PDF変換・結合ツール ${{ steps.tag.outputs.TAG }}
-
-          インストーラー（`PDFConverter-setup.exe`）をダウンロードして実行してください。
-
-          ### 変更内容
-          - リリースノートは [CHANGELOG](https://github.com/mozu93/PDFchangecombine) を参照してください。"
+            --notes-file release_body.md
         env:
           GH_TOKEN: ${{ github.token }}

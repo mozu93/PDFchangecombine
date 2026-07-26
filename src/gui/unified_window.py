@@ -3060,8 +3060,11 @@ class UnifiedWindow:
         """バージョンアップを検知したら、リリースノートをポップアップ表示する"""
         last_seen = self._last_seen_version
         if should_show_release_notes(APP_VERSION, last_seen):
-            project_root = Path(__file__).parent.parent.parent
-            notes_path = find_release_notes_path(project_root, APP_VERSION)
+            if getattr(sys, 'frozen', False):
+                base = Path(sys._MEIPASS)
+            else:
+                base = Path(__file__).parent.parent.parent
+            notes_path = find_release_notes_path(base, APP_VERSION)
             if notes_path:
                 content = notes_path.read_text(encoding="utf-8")
                 ReleaseNotesDialog(self.root, APP_VERSION, content)

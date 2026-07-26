@@ -1,15 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import glob
+
 from PyInstaller.utils.hooks import collect_data_files
 
 customtkinter_datas = collect_data_files('customtkinter')
 tkinterdnd2_datas   = collect_data_files('tkinterdnd2')
+# バージョンアップ時の「更新内容」ポップアップ表示用（release_notes.pyが探す）
+release_notes_datas = [(f, '.') for f in glob.glob('RELEASE_NOTES_v*.md')]
 
 a = Analysis(
     ['src/main.py'],
     pathex=['.', 'src'],
     binaries=[],
-    datas=customtkinter_datas + tkinterdnd2_datas + [
+    datas=customtkinter_datas + tkinterdnd2_datas + release_notes_datas + [
         ('assets/icon.ico', 'assets'),
         ('assets/icon.png', 'assets'),
     ],
