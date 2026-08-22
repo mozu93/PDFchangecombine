@@ -3604,6 +3604,7 @@ class UnifiedWindow:
         self._update_document_output_dir_label()
         self._update_combination_output_dir_label()
         self._update_pagenumber_output_dir_label()
+        self._update_page_editor_output_dir_label()
 
         self.split_excel_sheets_var.set(s.get("split_excel_sheets", False))
         self.doc_font_var.set(s.get("doc_font", "メイリオ"))
