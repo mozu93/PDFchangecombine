@@ -6,13 +6,9 @@
 import logging
 import os
 import sys
-import json
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any
-import threading
-from functools import wraps
+from typing import Optional
 
 from ..config import LOG_DIR, LOG_RETENTION_DAYS, APP_NAME
 
@@ -128,110 +124,6 @@ class AppLogger:
             f"失敗: {failed}, "
             f"処理時間: {processing_time:.2f}秒"
         )
-
-    def log_structured(self, level: str, event: str, data: Dict[str, Any]) -> None:
-        """構造化ログの記録"""
-        log_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'level': level.upper(),
-            'event': event,
-            'data': data,
-            'thread_id': threading.current_thread().ident
-        }
-
-        # JSON形式でログ出力
-        json_msg = json.dumps(log_entry, ensure_ascii=False)
-
-        if level.lower() == 'error':
-            self.error(f"STRUCTURED: {json_msg}")
-        elif level.lower() == 'warning':
-            self.warning(f"STRUCTURED: {json_msg}")
-        else:
-            self.info(f"STRUCTURED: {json_msg}")
-
-    def log_performance(self, operation: str, duration: float, metadata: Dict[str, Any] = None) -> None:
-        """パフォーマンス監視ログ"""
-        perf_data = {
-            'operation': operation,
-            'duration_seconds': round(duration, 3),
-            'metadata': metadata or {}
-        }
-        self.log_structured('INFO', 'PERFORMANCE_METRIC', perf_data)
-
-    def log_security_event(self, event_type: str, severity: str, details: Dict[str, Any]) -> None:
-        """セキュリティイベントログ"""
-        security_data = {
-            'event_type': event_type,
-            'severity': severity,
-            'details': details
-        }
-        self.log_structured('WARNING', 'SECURITY_EVENT', security_data)
-
-    def log_user_action(self, action: str, details: Dict[str, Any] = None) -> None:
-        """ユーザーアクションログ（個人情報除外）"""
-        user_data = {
-            'action': action,
-            'details': details or {}
-        }
-        self.log_structured('INFO', 'USER_ACTION', user_data)
-
-
-# パフォーマンス監視デコレーター
-def monitor_performance(operation_name: str = None):
-    """パフォーマンス監視デコレーター"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            op_name = operation_name or f"{func.__module__}.{func.__name__}"
-            start_time = time.time()
-
-            try:
-                result = func(*args, **kwargs)
-                duration = time.time() - start_time
-
-                # 成功時のパフォーマンスログ
-                logger.log_performance(op_name, duration, {
-                    'status': 'success',
-                    'args_count': len(args),
-                    'kwargs_count': len(kwargs)
-                })
-
-                return result
-
-            except Exception as e:
-                duration = time.time() - start_time
-
-                # エラー時のパフォーマンスログ
-                logger.log_performance(op_name, duration, {
-                    'status': 'error',
-                    'error_type': type(e).__name__,
-                    'args_count': len(args),
-                    'kwargs_count': len(kwargs)
-                })
-
-                raise
-
-        return wrapper
-    return decorator
-
-
-# ユーザーアクション監視デコレーター
-def monitor_user_action(action_name: str = None):
-    """ユーザーアクション監視デコレーター"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            action = action_name or f"UI_{func.__name__}"
-
-            logger.log_user_action(action, {
-                'timestamp': datetime.now().isoformat(),
-                'function': f"{func.__module__}.{func.__name__}"
-            })
-
-            return func(*args, **kwargs)
-
-        return wrapper
-    return decorator
 
 
 # シングルトンインスタンス

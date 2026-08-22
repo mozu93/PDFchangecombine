@@ -21,7 +21,7 @@ class CompletionBanner(ctk.CTkFrame):
     _BORDER_WARN = "#DD6B20"
 
     _HEIGHT_PLAIN = 44
-    _HEIGHT_WITH_DEST = 64
+    _HEIGHT_WITH_DEST = 76
 
     def __init__(self, parent, accent_color: str, accent_hover: str, **kwargs):
         super().__init__(
@@ -31,6 +31,20 @@ class CompletionBanner(ctk.CTkFrame):
         self.pack_propagate(False)
         self._accent = accent_color
         self._accent_hover = accent_hover
+
+        # pack()はside="right"側を先に確保した者勝ちのため、閉じるボタン・アクション
+        # ボタンを可変長のメッセージ列より先にpackし、常に必要幅を確保する。
+        # （逆順だとタブ幅が狭いときにボタン類の幅が0になり、操作不能になる）
+        self._close_btn = ctk.CTkButton(
+            self, text="✕", width=24, height=24,
+            fg_color="transparent", hover_color="#E2E8F0", text_color=CLR_DARK_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            command=self.hide,
+        )
+        self._close_btn.pack(side="right", padx=(0, 8), pady=6)
+
+        self._btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self._btn_frame.pack(side="right", padx=(0, 4), pady=4)
 
         text_col = ctk.CTkFrame(self, fg_color="transparent")
         text_col.pack(side="left", fill="x", expand=True, padx=(12, 8), pady=6)
@@ -45,17 +59,6 @@ class CompletionBanner(ctk.CTkFrame):
             text_col, text="", text_color=CLR_GRAY_TEXT, anchor="w", justify="left",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12)
         )
-
-        self._btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._btn_frame.pack(side="right", padx=(0, 4), pady=4)
-
-        self._close_btn = ctk.CTkButton(
-            self, text="✕", width=24, height=24,
-            fg_color="transparent", hover_color="#E2E8F0", text_color=CLR_DARK_TEXT,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
-            command=self.hide,
-        )
-        self._close_btn.pack(side="right", padx=(0, 8), pady=6)
 
     def show(self, message: str, success: bool = True,
               buttons: Optional[List[Tuple[str, Callable]]] = None,
@@ -76,8 +79,9 @@ class CompletionBanner(ctk.CTkFrame):
         self._msg.configure(text=message)
 
         if output_dir:
-            folder_name = Path(output_dir).name
-            self._dest_label.configure(text=f"保存先：「{folder_name}」フォルダ（{output_dir}）")
+            folder_name = Path(output_dir).name or output_dir
+            shown_path = self._shorten_path(output_dir)
+            self._dest_label.configure(text=f"保存先：「{folder_name}」フォルダ（{shown_path}）")
             self._dest_label.pack(anchor="w")
             self.configure(height=self._HEIGHT_WITH_DEST)
         else:
@@ -92,6 +96,13 @@ class CompletionBanner(ctk.CTkFrame):
                 font=ctk.CTkFont(family=FONT_FAMILY, size=12),
                 command=cmd,
             ).pack(side="left", padx=3)
+
+    @staticmethod
+    def _shorten_path(path: str, max_len: int = 40) -> str:
+        """パス表示用の短縮（末尾を優先して残す）"""
+        if len(path) <= max_len:
+            return path
+        return "..." + path[-(max_len - 3):]
 
     def hide(self) -> None:
         self.configure(height=0)

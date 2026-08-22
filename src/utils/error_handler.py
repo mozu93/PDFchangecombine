@@ -207,7 +207,13 @@ class ErrorHandler:
             
             # フォーカス設定
             ok_button.focus_set()
-            
+
+            if severity == ErrorSeverity.FATAL:
+                # FATAL時はこの直後にsys.exit()するため、描画を確定させたうえで
+                # ユーザーがOKを押すまでブロックする（さもないと画面に出る前に終了する）
+                dialog.update()
+                self.parent_window.wait_window(dialog)
+
         except Exception as dialog_error:
             # ダイアログ表示エラー時はログのみ
             logger.error(f"エラーダイアログ表示エラー: {dialog_error}")

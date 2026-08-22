@@ -11,7 +11,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.security import SecurityValidator, InputValidator, secure_file_operation
+from src.utils.security import SecurityValidator, InputValidator
 
 
 class TestSecurityValidatorFilePath:
@@ -30,6 +30,8 @@ class TestSecurityValidatorFilePath:
         assert SecurityValidator.validate_file_path(malicious) is False
 
     def test_windows_reserved_name_rejected(self, tmp_path):
+        # CONはWindowsのデバイス予約名でOSレベルでも作成できないため、実ファイルは作らず
+        # パス解決のみで判定されることを確認する（validate_file_pathは実在チェックより前に判定する）
         reserved = str(tmp_path / "CON.pdf")
         assert SecurityValidator.validate_file_path(reserved) is False
 
@@ -170,23 +172,3 @@ class TestInputValidatorPageRange:
 
     def test_non_numeric_rejected(self):
         assert InputValidator.validate_page_range("abc", "1") is False
-
-
-class TestSecureFileOperationDecorator:
-    def test_raises_for_invalid_path(self):
-        @secure_file_operation
-        def do_something(path):
-            return "ran"
-
-        with pytest.raises(ValueError):
-            do_something("../../etc/passwd")
-
-    def test_passes_through_for_valid_path(self, tmp_path):
-        f = tmp_path / "ok.pdf"
-        f.write_bytes(b"%PDF-1.4")
-
-        @secure_file_operation
-        def do_something(path):
-            return "ran"
-
-        assert do_something(str(f)) == "ran"

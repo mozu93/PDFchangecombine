@@ -191,7 +191,7 @@ class OfficeConverter:
             try:
                 pythoncom.CoInitialize()
                 logger.info("COM初期化完了")
-            except:
+            except Exception:
                 logger.info("COM初期化済み（既に初期化されているか別スレッド）")
             file_ext = Path(input_path).suffix.lower()
             
@@ -206,20 +206,20 @@ class OfficeConverter:
                     try:
                         word_app = win32com.client.DispatchEx("Word.Application")
                         logger.info("新しいWordインスタンスを作成 (DispatchEx)")
-                    except:
+                    except Exception:
                         word_app = win32com.client.Dispatch("Word.Application")
                         logger.info("新しいWordインスタンスを作成 (Dispatch)")
                     
                     # Visibleプロパティ設定をtry-catchで保護
                     try:
                         word_app.Visible = False
-                    except:
+                    except Exception:
                         logger.warning("Word.Visibleプロパティの設定をスキップ")
                     
                     # DisplayAlerts設定をtry-catchで保護
                     try:
                         word_app.DisplayAlerts = 0  # アラート無効化
-                    except:
+                    except Exception:
                         logger.warning("Word.DisplayAlertsプロパティの設定をスキップ")
                     
                     # ファイル存在確認
@@ -294,20 +294,20 @@ class OfficeConverter:
                     try:
                         excel_app = win32com.client.DispatchEx("Excel.Application")
                         logger.info("新しいExcelインスタンスを作成 (DispatchEx)")
-                    except:
+                    except Exception:
                         excel_app = win32com.client.Dispatch("Excel.Application")
                         logger.info("新しいExcelインスタンスを作成 (Dispatch)")
 
                     # Visibleプロパティ設定をtry-catchで保護
                     try:
                         excel_app.Visible = False
-                    except:
+                    except Exception:
                         logger.warning("Excel.Visibleプロパティの設定をスキップ")
 
                     # DisplayAlerts設定でダイアログを無効化
                     try:
                         excel_app.DisplayAlerts = False
-                    except:
+                    except Exception:
                         logger.warning("Excel.DisplayAlertsプロパティの設定をスキップ")
 
                     if not os.path.exists(input_abs_path):
@@ -372,7 +372,7 @@ class OfficeConverter:
                         for sheet_name, visibility in original_visibility.items():
                             try:
                                 workbook.Worksheets(sheet_name).Visible = visibility
-                            except:
+                            except Exception:
                                 pass
 
                         generated_files.append(output_abs_path)
@@ -399,7 +399,7 @@ class OfficeConverter:
                     try:
                         powerpoint_app = win32com.client.DispatchEx("PowerPoint.Application")
                         logger.info("新しいPowerPointインスタンスを作成 (DispatchEx)")
-                    except:
+                    except Exception:
                         powerpoint_app = win32com.client.Dispatch("PowerPoint.Application")
                         logger.info("新しいPowerPointインスタンスを作成 (Dispatch)")
                     
@@ -462,7 +462,7 @@ class OfficeConverter:
                     try:
                         for doc in word_app.Documents:
                             doc.Close(SaveChanges=False)
-                    except:
+                    except Exception:
                         pass
                     word_app.Quit()
                     # COMオブジェクトの明示的解放
@@ -475,7 +475,7 @@ class OfficeConverter:
                     try:
                         for wb in excel_app.Workbooks:
                             wb.Close(SaveChanges=False)
-                    except:
+                    except Exception:
                         pass
                     excel_app.Quit()
                     del excel_app
@@ -486,7 +486,7 @@ class OfficeConverter:
                     try:
                         for pres in powerpoint_app.Presentations:
                             pres.Close()
-                    except:
+                    except Exception:
                         pass
                     powerpoint_app.Quit()
                     del powerpoint_app

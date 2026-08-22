@@ -41,7 +41,13 @@ def check_latest_version() -> Optional[dict]:
         assets = data.get("assets", [])
         if not tag or not assets:
             return None
-        download_url = assets[0].get("browser_download_url", "")
+        # インストーラー資産を名前で選ぶ（将来assetsに他ファイルが追加されても
+        # assets[0]決め打ちで誤ったファイルを取得しないようにする）
+        installer_asset = next(
+            (a for a in assets if a.get("name", "").lower().endswith("setup.exe")),
+            assets[0],
+        )
+        download_url = installer_asset.get("browser_download_url", "")
         if not download_url:
             return None
         return {
@@ -98,19 +104,28 @@ def download_new_installer(
         return None
 
 
-def launch_updater(installer_path: str) -> None:
-    """バッチファイル経由でインストーラーを起動し、アプリを終了する"""
-    fd, bat_path = tempfile.mkstemp(
-        prefix="PDFchangecombine_updater_", suffix=".bat"
-    )
-    with os.fdopen(fd, "w", encoding="cp932") as f:
-        f.write("@echo off\r\n")
-        f.write("timeout /t 3 /nobreak > nul\r\n")
-        f.write(f'start "" "{installer_path}"\r\n')
-        f.write('del "%~f0"\r\n')
+def launch_updater(installer_path: str) -> bool:
+    """バッチファイル経由でインストーラーを起動し、アプリを終了する。
 
-    subprocess.Popen(
-        ["cmd", "/c", bat_path],
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    起動に成功した場合はアプリを終了する（呼び出し元には戻らない）。
+    バッチファイルの準備に失敗した場合はFalseを返し、呼び出し元でエラー表示させる。
+    """
+    try:
+        fd, bat_path = tempfile.mkstemp(
+            prefix="PDFchangecombine_updater_", suffix=".bat"
+        )
+        with os.fdopen(fd, "w", encoding="cp932") as f:
+            f.write("@echo off\r\n")
+            f.write("timeout /t 3 /nobreak > nul\r\n")
+            f.write(f'start "" "{installer_path}"\r\n')
+            f.write('del "%~f0"\r\n')
+
+        subprocess.Popen(
+            ["cmd", "/c", bat_path],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except Exception as e:
+        _log_error(f"launch_updater failed: {type(e).__name__}: {e}")
+        return False
+
     sys.exit(0)

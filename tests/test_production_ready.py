@@ -13,6 +13,8 @@ from unittest.mock import patch, MagicMock
 import sys
 import os
 
+import pytest
+
 # プロジェクトルートをパスに追加
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -240,7 +242,7 @@ class TestPerformance(unittest.TestCase):
 
     def test_memory_usage(self):
         """メモリ使用量テスト"""
-        import psutil
+        psutil = pytest.importorskip("psutil")
 
         process = psutil.Process()
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB

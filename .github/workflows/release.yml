@@ -16,27 +16,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Get tag name
+        id: tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release notes exist
+        shell: bash
+        run: test -f "RELEASE_NOTES_${{ steps.tag.outputs.TAG }}.md"
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+      - name: Sync installer version with tag
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install `
-            pyinstaller `
-            customtkinter `
-            tkinterdnd2 `
-            Pillow `
-            reportlab `
-            PyMuPDF `
-            python-docx `
-            openpyxl `
-            xlrd `
-            python-pptx `
-            pywin32 `
-            packaging
+          $content = Get-Content installer\setup.iss -Raw
+          $content = $content -replace 'AppVersion=[\d.]+', "AppVersion=${{ steps.tag.outputs.VERSION }}"
+          Set-Content installer\setup.iss $content -NoNewline
 
       - name: Build executable
         run: pyinstaller PDFchangecombine.spec
@@ -49,11 +58,6 @@ jobs:
 
       - name: Build installer
         run: iscc installer\setup.iss
-
-      - name: Get tag name
-        id: tag
-        shell: bash
-        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare release notes
         shell: bash

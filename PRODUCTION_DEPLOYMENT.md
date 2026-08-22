@@ -66,10 +66,8 @@ LOG_RETENTION_DAYS = 30  # ログ保持期間
 
 ### パフォーマンス監視
 
-構造化ログによる自動監視：
-- 処理時間測定
-- メモリ使用量追跡
-- セキュリティイベント記録
+- 起動時間はログに記録される（要件内5秒以内かどうかを含む）
+- 変換処理時間が要件（10秒以内）を超えた場合は警告ログを記録
 
 ## 配布前チェックリスト
 
@@ -95,7 +93,6 @@ LOG_RETENTION_DAYS = 30  # ログ保持期間
 - [ ] 包括テストスイート実行
 - [ ] ログ出力確認
 - [ ] エラーダイアログ表示確認
-- [ ] セキュリティイベント記録確認
 
 ## 運用監視
 
@@ -118,20 +115,8 @@ LOG_RETENTION_DAYS = 30  # ログ保持期間
 
 ### ログ分析
 
-構造化ログ（JSON形式）により以下が追跡可能：
-
-```json
-{
-  "timestamp": "2025-09-21T16:45:30",
-  "level": "INFO",
-  "event": "PERFORMANCE_METRIC",
-  "data": {
-    "operation": "pdf_combination",
-    "duration_seconds": 2.345,
-    "metadata": {"file_count": 5, "status": "success"}
-  }
-}
-```
+ログはテキスト形式（`%(asctime)s [%(levelname)s] %(name)s: %(message)s`）で、
+`%APPDATA%/PDF変換・結合ツール/logs/` 配下に日付ごとのファイルとして出力される。
 
 ## トラブルシューティング
 

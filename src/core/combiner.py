@@ -595,7 +595,7 @@ class PDFCombiner:
                 try:
                     if writer:
                         writer.close()
-                except:
+                except Exception:
                     pass
 
             # 結果設定
@@ -2238,7 +2238,7 @@ class PDFCombiner:
             # フォント設定
             try:
                 c.setFont(self.font_name, font_size)
-            except:
+            except Exception:
                 c.setFont("Helvetica", font_size)
 
             # 日本語テキストの適切なエンコーディング
@@ -2359,7 +2359,7 @@ class PDFCombiner:
 
             try:
                 c.setFont(self.font_name, font_size)
-            except:
+            except Exception:
                 c.setFont("Helvetica", font_size)
 
             # テキスト幅を高速計算

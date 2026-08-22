@@ -2,6 +2,13 @@
 
 Microsoft Officeファイル（Word、Excel、PowerPoint）と画像ファイルをPDFに変換し、複数のPDFファイルを結合するデスクトップアプリケーション
 
+> ⚠️ **Word・Excel・PowerPointへの変換にはMicrosoft Office（デスクトップ版）のインストールが必須です。**
+> 変換処理はOffice本体のCOM APIを直接呼び出しており、Officeが無い環境ではこれらの変換は動作しません（PDF結合・画像変換・資料NO/ページ番号挿入はOffice不要）。
+
+## ダウンロード
+
+最新版のインストーラーは [Releases](https://github.com/mozu93/PDFchangecombine/releases/latest) から入手できます（`PDFConverter-setup.exe`）。
+
 ## 📖 ユーザーガイド
 
 - **🚀 [クイックスタート](QUICK_START.md)**: 5分で基本操作を習得
@@ -49,9 +56,9 @@ Microsoft Officeファイル（Word、Excel、PowerPoint）と画像ファイル
 - **言語**: Python 3.9+
 - **GUIフレームワーク**: CustomTkinter
 - **PDF処理**: PyMuPDF, reportlab
-- **Office変換**: python-docx, openpyxl, python-pptx
+- **Office変換**: pywin32（Microsoft Office COM API、Word/Excel/PowerPoint本体を直接操作）
 - **画像処理**: Pillow
-- **パッケージング**: PyInstaller
+- **パッケージング**: PyInstaller + Inno Setup
 
 ## 開発フェーズ
 
@@ -62,13 +69,17 @@ Microsoft Officeファイル（Word、Excel、PowerPoint）と画像ファイル
 
 ## 要件
 
-- Python 3.9以上
 - Windows 10/11 (64bit)
+- Word/Excel/PowerPoint変換を使う場合はMicrosoft Office（デスクトップ版）が別途必要
 - 起動時間: 5秒以内
 - 変換時間: 10MBファイル 10秒以内
 - メモリ使用量: アイドル時 200MB未満
 
-## セットアップ
+インストーラー版（[Releases](https://github.com/mozu93/PDFchangecombine/releases/latest)）を使う場合、Pythonのインストールは不要です。
+
+## 開発環境セットアップ
+
+- Python 3.9以上
 
 ```bash
 # 依存関係インストール
@@ -76,4 +87,11 @@ pip install -r requirements.txt
 
 # アプリケーション実行
 python src/main.py
+
+# テスト実行
+python -m pytest tests/ -q
 ```
+
+## ライセンス
+
+[MIT License](LICENSE)

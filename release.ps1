@@ -1,4 +1,5 @@
-# release.ps1 - パッチバージョンアップ & インストーラービルド & GitHubリリース
+# release.ps1 - パッチバージョンアップ & ローカルビルド検証 & タグpush
+# GitHub Releaseの作成・アップロードは .github/workflows/release.yml（タグpushで起動）が行う。
 # 使い方: .\release.ps1
 # オプション: .\release.ps1 -Version 1.2.3  (バージョンを直接指定)
 
@@ -10,7 +11,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $ROOT   = $PSScriptRoot
-$ISCC   = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+$ISCC_CANDIDATES = @(
+    "C:\Program Files\Inno Setup 7\ISCC.exe",
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+    "C:\Program Files\Inno Setup 6\ISCC.exe"
+)
+$ISCC   = $ISCC_CANDIDATES | Where-Object { Test-Path $_ } | Select-Object -First 1
 $SPEC   = "$ROOT\PDFchangecombine.spec"
 $ISS    = "$ROOT\installer\setup.iss"
 $CONFIG = "$ROOT\src\config.py"
@@ -28,7 +34,22 @@ if ($Version -eq "") {
     }
 }
 
+# ── リリースノート存在確認（CIも同じファイルを要求するため事前に検証） ──
+$RELEASE_NOTES = "$ROOT\RELEASE_NOTES_v$Version.md"
+if (-not (Test-Path $RELEASE_NOTES)) {
+    Write-Error "リリースノートが見つかりません: $RELEASE_NOTES`nこのファイルを作成してから再実行してください（CIのリリース作成時にも必要です）。"
+    exit 1
+}
+
 Write-Host "=== リリース: v$Version ===" -ForegroundColor Cyan
+
+# ── テスト実行 ───────────────────────────────────────────────
+Write-Host "テスト実行中..." -ForegroundColor Yellow
+Push-Location $ROOT
+python -m pytest tests/ -q
+if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Error "テストが失敗しました"; exit 1 }
+Pop-Location
+Write-Host "  テスト成功" -ForegroundColor Green
 
 # ── バージョン書き換え ─────────────────────────────────────────
 Write-Host "バージョン更新中..." -ForegroundColor Yellow
@@ -53,7 +74,7 @@ Write-Host "  PyInstaller ビルド完了" -ForegroundColor Green
 
 # ── Inno Setup インストーラービルド ────────────────────────────
 Write-Host "インストーラービルド中..." -ForegroundColor Yellow
-if (-not (Test-Path $ISCC)) { Write-Error "ISCC.exe が見つかりません: $ISCC"; exit 1 }
+if (-not $ISCC) { Write-Error "ISCC.exe が見つかりません（確認したパス: $($ISCC_CANDIDATES -join ', ')）"; exit 1 }
 & $ISCC $ISS /Q
 if ($LASTEXITCODE -ne 0) { Write-Error "Inno Setup ビルド失敗"; exit 1 }
 if (-not (Test-Path $DIST)) { Write-Error "インストーラーが生成されませんでした: $DIST"; exit 1 }
@@ -71,14 +92,7 @@ git push origin main
 git push origin "v$Version"
 Write-Host "  Git push 完了 (v$Version)" -ForegroundColor Green
 
-# ── GitHub Release 作成 & アップロード ──────────────────────────
-Write-Host "GitHub Release 作成中..." -ForegroundColor Yellow
-gh release create "v$Version" `
-    --title "v$Version" `
-    --generate-notes `
-    $DIST
-Write-Host "  GitHub Release 完了" -ForegroundColor Green
-
 Write-Host ""
-Write-Host "=== リリース完了: v$Version ===" -ForegroundColor Cyan
-gh release view "v$Version" --json url -q ".url"
+Write-Host "=== ローカル検証完了: v$Version ===" -ForegroundColor Cyan
+Write-Host "GitHub ActionsがGitHub Releaseの作成・アップロードを自動で行います。" -ForegroundColor Cyan
+Write-Host "進捗確認: gh run watch" -ForegroundColor Cyan

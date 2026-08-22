@@ -141,6 +141,9 @@ class UnifiedWindow:
 
         # エラーハンドラー設定
         error_handler.parent_window = self.root
+        # sys.excepthookはTkinterのコールバック内例外（ボタン押下・afterタイマー等）を
+        # 捕捉しないため、Tkのコールバック例外ハンドラにも同じFATAL処理を登録する
+        self.root.report_callback_exception = error_handler._handle_uncaught_exception
 
         self._log_startup_time()
     
@@ -473,9 +476,10 @@ class UnifiedWindow:
             self.conversion_tab, CLR_CONV_PRIMARY, CLR_CONV_HOVER,
             self._change_conversion_output_dir)
         conv_output_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
-        self._attach_tooltip(conv_output_frame,
-            lambda: OutputManager.resolve_output_dir(
-                self.conversion_output_dir, self.conversion_files, CONVERSION_OUTPUT_FOLDER_NAME))
+        _conv_output_tip = lambda: OutputManager.resolve_output_dir(
+            self.conversion_output_dir, self.conversion_files, CONVERSION_OUTPUT_FOLDER_NAME)
+        self._attach_tooltip(self.conversion_output_name_label, _conv_output_tip)
+        self._attach_tooltip(self.conversion_output_desc_label, _conv_output_tip)
 
         # Excelシート分割オプション
         self.excel_options_frame = ctk.CTkFrame(
@@ -652,9 +656,10 @@ class UnifiedWindow:
             self.combination_tab, CLR_COMB_PRIMARY, CLR_COMB_HOVER,
             self._change_combination_output_dir)
         comb_output_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
-        self._attach_tooltip(comb_output_frame,
-            lambda: OutputManager.resolve_output_dir(
-                self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME))
+        _comb_output_tip = lambda: OutputManager.resolve_output_dir(
+            self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME)
+        self._attach_tooltip(self.combination_output_name_label, _comb_output_tip)
+        self._attach_tooltip(self.combination_output_desc_label, _comb_output_tip)
 
         # オプションフレーム（白紙挿入 + ページ番号）— 詳細設定として折りたたみ
         self.add_blank_page_var = ctk.BooleanVar()
@@ -913,9 +918,10 @@ class UnifiedWindow:
             self.document_number_tab, CLR_DOC_PRIMARY, CLR_DOC_HOVER,
             self._change_document_output_dir)
         doc_output_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
-        self._attach_tooltip(doc_output_frame,
-            lambda: OutputManager.resolve_output_dir(
-                self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME))
+        _doc_output_tip = lambda: OutputManager.resolve_output_dir(
+            self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME)
+        self._attach_tooltip(self.document_output_name_label, _doc_output_tip)
+        self._attach_tooltip(self.document_output_desc_label, _doc_output_tip)
 
         # ── 設定フレーム（ボタンの上に固定） ──
         settings_frame = ctk.CTkFrame(
@@ -2194,7 +2200,7 @@ class UnifiedWindow:
         未設定の場合は既定フォルダ名と「元のファイルと同じ場所」を表示する。
         """
         if override and resolved:
-            folder_name = Path(resolved).name
+            folder_name = Path(resolved).name or resolved
             desc = self._shorten_path(resolved, max_len=44)
         else:
             folder_name = default_folder_name
@@ -2615,13 +2621,6 @@ class UnifiedWindow:
                 # 実行中の処理を停止
                 self.pdf_combiner = None
 
-            # Office COMオブジェクトの強制クリーンアップ
-            try:
-                import pythoncom
-                pythoncom.CoUninitialize()
-            except:
-                pass
-
             # 一時ファイルの削除
             try:
                 import tempfile
@@ -2629,7 +2628,7 @@ class UnifiedWindow:
                 for temp_file in Path(temp_dir).glob("*.tmp"):
                     if temp_file.name.endswith('.pdf.tmp'):
                         temp_file.unlink(missing_ok=True)
-            except:
+            except Exception:
                 pass
 
         except Exception as e:
@@ -2792,9 +2791,10 @@ class UnifiedWindow:
             self.pagenumber_tab, CLR_PN_PRIMARY, CLR_PN_HOVER,
             self._change_pagenumber_output_dir)
         pn_output_frame.pack(fill="x", padx=15, pady=(0, 4))
-        self._attach_tooltip(pn_output_frame,
-            lambda: OutputManager.resolve_output_dir(
-                self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME))
+        _pn_output_tip = lambda: OutputManager.resolve_output_dir(
+            self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME)
+        self._attach_tooltip(self.pagenumber_output_name_label, _pn_output_tip)
+        self._attach_tooltip(self.pagenumber_output_desc_label, _pn_output_tip)
 
         # ── 実行ボタン + プレビューボタン ──
         pn_btn_frame = ctk.CTkFrame(self.pagenumber_tab, fg_color="transparent")

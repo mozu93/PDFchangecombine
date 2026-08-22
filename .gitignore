@@ -85,3 +85,12 @@ dist/
 # Test files
 test_files/
 sample_files/
+
+# Claude Code local settings（ユーザー個別の権限設定。共有しない）
+.claude/settings.local.json
+
+# セッション作業ファイル
+.superpowers/
+app_run_*.log
+app_stdout.log
+app_stderr.log

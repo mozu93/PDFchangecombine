@@ -220,7 +220,9 @@ class UpdateBanner(ctk.CTkFrame):
         if not self._installer_path:
             return
         if getattr(sys, "frozen", False):
-            launch_updater(self._installer_path)
+            if not launch_updater(self._installer_path):
+                self._msg.configure(text="インストーラーの起動に失敗しました。後でもう一度お試しください。")
+                self._set_state("ready")
         else:
             import subprocess
             subprocess.Popen([self._installer_path])
