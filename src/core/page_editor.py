@@ -6,9 +6,13 @@
 """
 
 from dataclasses import dataclass
-from typing import List, Set
+from pathlib import Path
+from typing import Dict, List, Optional, Set
+
+import fitz
 
 from ..utils.logger import logger
+from ..utils.security import SecurityValidator
 
 
 class PageEditError(Exception):
@@ -119,3 +123,115 @@ def insert_refs(pages: List[PageRef], after_index: int,
         )
     at = after_index + 1
     return list(pages[:at]) + list(new_refs) + list(pages[at:])
+
+
+class PageEditSession:
+    """1つのメインPDFに対する編集セッション。
+
+    fitz.Document をここで一元所有し、PageRef には doc_id しか持たせない。
+    これによりクローズ管理・取り消し履歴・テストがすべて単純になる。
+    """
+
+    MAX_HISTORY = 20
+
+    def __init__(self) -> None:
+        self._docs: Dict[int, fitz.Document] = {}
+        self._paths: Dict[int, str] = {}
+        self._next_doc_id: int = 1
+        self._pages: List[PageRef] = []
+        self._initial_pages: List[PageRef] = []
+        self._history: List[List[PageRef]] = []
+
+    # ── 状態参照 ──
+
+    @property
+    def pages(self) -> List[PageRef]:
+        """現在の並び（呼び出し元が壊さないようコピーを返す）"""
+        return list(self._pages)
+
+    @property
+    def main_path(self) -> str:
+        """メインPDFのパス（未読み込みなら空文字）"""
+        return self._paths.get(1, "") if self._docs else ""
+
+    def source_path(self, ref: PageRef) -> str:
+        """PageRef の取得元ファイルパスを返す"""
+        return self._paths.get(ref.doc_id, "")
+
+    def get_page(self, ref: PageRef) -> fitz.Page:
+        """サムネイル描画用に fitz.Page を返す。
+
+        注意: 戻り値は Document に紐づくため、必ずワーカースレッド上で
+        使い切ること（PageEditWorker 経由で呼ぶ）。
+        """
+        doc = self._docs.get(ref.doc_id)
+        if doc is None:
+            raise PageEditError("編集セッションが閉じられています")
+        return doc[ref.page_index]
+
+    # ── 読み込み ──
+
+    def _open_document(self, path: str) -> int:
+        """PDFを開いて doc_id を採番する。
+
+        ファイルをロックしないよう、パスではなくバイト列から開く。
+        （fitz.open(path) は Windows でハンドルを保持し続けるため使わない）
+        """
+        if not SecurityValidator.validate_file_path(path):
+            raise PageEditError(f"読み込めないファイルです: {Path(path).name}")
+
+        try:
+            raw = Path(path).read_bytes()
+            doc = fitz.open(stream=raw, filetype="pdf")
+        except Exception as e:
+            logger.warning(f"PDFの読み込みに失敗: {path}: {e}")
+            raise PageEditError(
+                f"PDFを開けませんでした: {Path(path).name}"
+            ) from e
+
+        # 暗号化PDFは fitz.open() が例外を投げない（needs_pass が立つだけ）ため
+        # ここで明示的に弾く
+        if doc.needs_pass:
+            doc.close()
+            raise PageEditError(
+                f"パスワードで保護されたPDFは開けません: {Path(path).name}"
+            )
+
+        if doc.page_count == 0:
+            doc.close()
+            raise PageEditError(f"ページがありません: {Path(path).name}")
+
+        doc_id = self._next_doc_id
+        self._next_doc_id += 1
+        self._docs[doc_id] = doc
+        self._paths[doc_id] = path
+        return doc_id
+
+    def load(self, path: str) -> None:
+        """メインPDFを読み込む。既存セッションがあれば先に破棄する"""
+        self.close()
+        doc_id = self._open_document(path)
+        self._pages = [PageRef(doc_id, i) for i in range(self._docs[doc_id].page_count)]
+        self._initial_pages = list(self._pages)
+        self._history = []
+        logger.info(f"ページ編集: 読み込み完了 {Path(path).name} ({len(self._pages)}ページ)")
+
+    # ── 終了処理 ──
+
+    def close(self) -> None:
+        """開いている全ドキュメントを閉じ、状態をリセットする。
+
+        呼ぶのは「新規読み込み直前」「アプリ終了」「タブのクリア」の3つだけ。
+        保存後には呼ばない（保存後も編集を続けられるようにするため）。
+        """
+        for doc_id, doc in self._docs.items():
+            try:
+                doc.close()
+            except Exception as e:
+                logger.warning(f"ドキュメントのクローズに失敗 (doc_id={doc_id}): {e}")
+        self._docs.clear()
+        self._paths.clear()
+        self._next_doc_id = 1
+        self._pages = []
+        self._initial_pages = []
+        self._history = []
