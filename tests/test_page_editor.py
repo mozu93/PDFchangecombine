@@ -294,3 +294,124 @@ class TestSessionClose:
     def test_未読み込みでのcloseは安全(self, session):
         session.close()
         assert session.pages == []
+
+
+class TestSessionApplyUndo:
+    def test_applyで並びが更新される(self, session, make_pdf):
+        session.load(make_pdf("main", 5))
+        session.apply(delete_pages(session.pages, {1}))
+        assert [r.page_index for r in session.pages] == [0, 2, 3, 4]
+
+    def test_undoで1手戻る(self, session, make_pdf):
+        session.load(make_pdf("main", 5))
+        session.apply(delete_pages(session.pages, {1}))
+        session.apply(delete_pages(session.pages, {0}))
+        assert [r.page_index for r in session.pages] == [2, 3, 4]
+
+        assert session.undo() is True
+        assert [r.page_index for r in session.pages] == [0, 2, 3, 4]
+
+        assert session.undo() is True
+        assert [r.page_index for r in session.pages] == [0, 1, 2, 3, 4]
+
+    def test_履歴が空ならundoはFalseを返す(self, session, make_pdf):
+        session.load(make_pdf("main", 3))
+        assert session.can_undo is False
+        assert session.undo() is False
+
+    def test_読み込み直後は履歴が空(self, session, make_pdf):
+        session.load(make_pdf("main", 3))
+        session.apply(delete_pages(session.pages, {0}))
+        assert session.can_undo is True
+        session.load(make_pdf("other", 3))
+        assert session.can_undo is False
+
+    def test_履歴は最大20手まで(self, session, make_pdf):
+        session.load(make_pdf("main", 30))
+        for _ in range(25):
+            session.apply(delete_pages(session.pages, {0}))
+        assert len(session.pages) == 5
+        undone = 0
+        while session.undo():
+            undone += 1
+        assert undone == PageEditSession.MAX_HISTORY
+
+
+class TestSessionReset:
+    def test_読み込み直後の並びに戻る(self, session, make_pdf):
+        session.load(make_pdf("main", 4))
+        session.apply(delete_pages(session.pages, {0, 1}))
+        session.apply(move_pages_forward(session.pages, {0}))
+        session.reset()
+        assert [r.page_index for r in session.pages] == [0, 1, 2, 3]
+
+    def test_resetすると履歴も消える(self, session, make_pdf):
+        session.load(make_pdf("main", 4))
+        session.apply(delete_pages(session.pages, {0}))
+        session.reset()
+        assert session.can_undo is False
+
+    def test_resetしてもドキュメントは開いたまま(self, session, make_pdf):
+        session.load(make_pdf("main", 3))
+        session.reset()
+        # 例外なくページを取得できること（docがクローズされていない証拠）
+        assert session.get_page(session.pages[0]) is not None
+
+
+class TestSessionInsertFromFile:
+    def test_指定位置の直後に全ページが挿入される(self, session, make_pdf):
+        session.load(make_pdf("main", 3))
+        session.insert_from_file(0, make_pdf("sub", 2))
+        assert len(session.pages) == 5
+        # 1ページ目の直後にsubの2ページが入る
+        assert session.pages[0].doc_id != session.pages[1].doc_id
+        assert session.pages[1].doc_id == session.pages[2].doc_id
+        assert session.pages[3].doc_id == session.pages[0].doc_id
+
+    def test_マイナス1で先頭に挿入される(self, session, make_pdf):
+        session.load(make_pdf("main", 2))
+        session.insert_from_file(-1, make_pdf("sub", 1))
+        assert len(session.pages) == 3
+        assert session.pages[0].doc_id != session.pages[1].doc_id
+
+    def test_挿入はundoで戻せる(self, session, make_pdf):
+        session.load(make_pdf("main", 3))
+        session.insert_from_file(0, make_pdf("sub", 2))
+        assert session.undo() is True
+        assert len(session.pages) == 3
+
+    def test_同じファイルを挿入元にしても独立ハンドルになる(self, session, make_pdf):
+        path = make_pdf("main", 2)
+        session.load(path)
+        main_doc_id = session.pages[0].doc_id
+        session.insert_from_file(1, path)
+        assert len(session.pages) == 4
+        assert session.pages[2].doc_id != main_doc_id
+
+    def test_存在しない挿入元でPageEditError(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 3))
+        with pytest.raises(PageEditError):
+            session.insert_from_file(0, str(tmp_path / "missing.pdf"))
+
+    def test_挿入失敗時は編集状態が保持される(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 3))
+        session.apply(delete_pages(session.pages, {0}))
+        before = session.pages
+        with pytest.raises(PageEditError):
+            session.insert_from_file(0, str(tmp_path / "missing.pdf"))
+        assert session.pages == before
+
+    def test_パスワード保護PDFを挿入元にするとPageEditError(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 2))
+        doc = fitz.open()
+        doc.new_page()
+        protected = tmp_path / "protected.pdf"
+        doc.save(
+            str(protected),
+            encryption=fitz.PDF_ENCRYPT_AES_256,
+            user_pw="secret",
+            owner_pw="secret",
+        )
+        doc.close()
+        with pytest.raises(PageEditError):
+            session.insert_from_file(0, str(protected))

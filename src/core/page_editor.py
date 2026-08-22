@@ -216,6 +216,53 @@ class PageEditSession:
         self._history = []
         logger.info(f"ページ編集: 読み込み完了 {Path(path).name} ({len(self._pages)}ページ)")
 
+    # ── 編集操作 ──
+
+    @property
+    def can_undo(self) -> bool:
+        return bool(self._history)
+
+    def apply(self, new_pages: List[PageRef]) -> None:
+        """純粋関数の結果を反映し、直前の状態を履歴に積む"""
+        self._history.append(list(self._pages))
+        if len(self._history) > self.MAX_HISTORY:
+            self._history.pop(0)
+        self._pages = list(new_pages)
+
+    def undo(self) -> bool:
+        """1手戻す。履歴が空なら False を返す"""
+        if not self._history:
+            return False
+        self._pages = self._history.pop()
+        return True
+
+    def reset(self) -> None:
+        """読み込み直後の並びへ全リセットする。
+
+        ドキュメントは閉じないので、サムネイル画像をそのまま再利用できる。
+        """
+        self._pages = list(self._initial_pages)
+        self._history = []
+
+    def insert_from_file(self, after_index: int, insert_path: str) -> None:
+        """指定PDFの全ページを after_index の直後に挿入する。
+
+        after_index = -1 は先頭。失敗時は PageEditError を送出し、
+        編集状態は一切変更しない。
+        """
+        if not -1 <= after_index < len(self._pages):
+            raise PageEditError(f"挿入位置が不正です: {after_index}")
+
+        # 位置検証を先に済ませてから開くことで、失敗時に doc を開きっぱなしにしない
+        doc_id = self._open_document(insert_path)
+        new_refs = [
+            PageRef(doc_id, i) for i in range(self._docs[doc_id].page_count)
+        ]
+        self.apply(insert_refs(self._pages, after_index, new_refs))
+        logger.info(
+            f"ページ編集: {Path(insert_path).name} から{len(new_refs)}ページ挿入"
+        )
+
     # ── 終了処理 ──
 
     def close(self) -> None:
