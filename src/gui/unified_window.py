@@ -30,6 +30,7 @@ from ..config import (
     ALL_SUPPORTED_EXTENSIONS,
     CONVERSION_OUTPUT_FOLDER_NAME, DOCUMENT_OUTPUT_FOLDER_NAME,
     COMBINATION_OUTPUT_FOLDER_NAME, PAGENUMBER_OUTPUT_FOLDER_NAME,
+    PAGE_EDITOR_OUTPUT_FOLDER_NAME, PAGE_EDITOR_MIN_WIDTH,
     APP_VERSION,
 )
 from ..utils.logger import logger
@@ -46,6 +47,7 @@ from .confirm_dialog import confirm_with_skip
 from .replace_dialog import ReplaceDocumentDialog
 from .release_notes_dialog import ReleaseNotesDialog
 from ..utils.release_notes import should_show_release_notes, find_release_notes_path
+from PIL import ImageTk
 from .theme import (
     CLR_PRIMARY, CLR_ACCENT, CLR_LIGHT_BG, CLR_LIGHT_BORDER,
     CLR_SEL_BORDER, CLR_TOOLBAR_BG, CLR_BORDER, CLR_RED_LIGHT,
@@ -54,15 +56,25 @@ from .theme import (
     CLR_DISABLED_BG, CLR_DISABLED_TEXT,
     FONT_FAMILY,
     TAB_CONVERSION, TAB_COMBINATION, TAB_DOCUMENT, TAB_PAGENUMBER, TAB_INACTIVE,
+    TAB_PAGEEDIT,
     CLR_CONV_PRIMARY, CLR_CONV_HOVER,
     CLR_COMB_PRIMARY, CLR_COMB_HOVER,
     CLR_DOC_PRIMARY,  CLR_DOC_HOVER,
     CLR_PN_PRIMARY,   CLR_PN_HOVER,
+    CLR_PE_PRIMARY,   CLR_PE_HOVER,
 )
 from ..utils.error_handler import error_handler, ErrorSeverity
 from ..utils.settings import load_settings, save_settings, DEFAULT_SETTINGS
 from ..core.converter import PDFConverter
 from ..core.combiner import PDFCombiner
+from ..core.page_editor import (
+    PageEditSession,
+    delete_pages,
+    move_pages_backward,
+    move_pages_forward,
+)
+from .page_edit_worker import PageEditWorker
+from .page_thumbnail_grid import PageThumbnailGrid, render_thumbnail
 
 
 class DndCTk(ctk.CTk, TkinterDnD.DnDWrapper):
@@ -127,6 +139,17 @@ class UnifiedWindow:
         self.document_output_dir: str = ""
         self.combination_output_dir: str = ""
         self.pagenumber_output_dir: str = ""
+
+        # ページ編集タブ
+        self.page_editor_output_dir: str = ""
+        self.page_editor_session = PageEditSession()
+        self.page_editor_worker = PageEditWorker(
+            lambda fn: self.root.after(0, fn)
+        )
+        # PageRef -> ImageTk.PhotoImage。GC されると画像が消えるので必ず保持する
+        self._pe_images: dict = {}
+        self._pe_selected: set = set()
+        self._pe_busy: bool = False
 
         # UI作成
         self._create_main_ui()
@@ -270,6 +293,7 @@ class UnifiedWindow:
             ("資料NO挿入",     "📄", TAB_DOCUMENT),
             ("PDF結合",       "📋", TAB_COMBINATION),
             ("ページ番号挿入", "🔢", TAB_PAGENUMBER),
+            ("ページ編集",     "✂️", TAB_PAGEEDIT),
         ]
         self._tab_active_colors = {name: colors for name, icon, colors in _TAB_DEFS}
         self._tab_buttons: dict = {}
@@ -315,12 +339,14 @@ class UnifiedWindow:
         self.combination_tab     = self._tab_frames["PDF結合"]
         self.document_number_tab = self._tab_frames["資料NO挿入"]
         self.pagenumber_tab      = self._tab_frames["ページ番号挿入"]
+        self.page_editor_tab     = self._tab_frames["ページ編集"]
 
         # 各タブのUI作成
         self._create_conversion_ui()
         self._create_document_number_ui()
         self._create_combination_ui()
         self._create_pagenumber_ui()
+        self._create_page_editor_ui()
 
         # 初期タブ選択
         self._switch_tab("PDF変換")
@@ -341,6 +367,26 @@ class UnifiedWindow:
             else:
                 frame.pack_forget()
         self._current_tab = name
+        if name == "ページ編集":
+            self._ensure_page_editor_width()
+
+    def _ensure_page_editor_width(self) -> None:
+        """ページ編集タブに必要な幅を確保する。
+
+        サムネイルを並べるため720pxでは狭いので PAGE_EDITOR_MIN_WIDTH まで
+        「広げる」。ユーザーが手動で広げた幅を尊重するため、縮めることはしない。
+        """
+        try:
+            self.root.update_idletasks()
+            current_w = self.root.winfo_width()
+            if current_w >= PAGE_EDITOR_MIN_WIDTH:
+                return
+            max_w = self.root.winfo_screenwidth() - 40
+            new_w = min(PAGE_EDITOR_MIN_WIDTH, max_w)
+            if new_w > current_w:
+                self.root.geometry(f"{new_w}x{self.root.winfo_height()}")
+        except Exception as e:
+            logger.debug(f"ページ編集タブの幅調整をスキップ: {e}")
 
     def _create_output_summary_row(self, parent, primary_color, hover_color,
                                     change_command) -> tuple:
@@ -1330,6 +1376,13 @@ class UnifiedWindow:
             drag_drop_handler.setup_drag_drop_recursive(
                 self.pagenumber_tab,
                 self._add_pagenumber_files,
+                pdf_filter
+            )
+
+            # ページ編集タブ全体をドロップターゲットに
+            drag_drop_handler.setup_drag_drop_recursive(
+                self.page_editor_tab,
+                self._add_page_editor_files,
                 pdf_filter
             )
 
@@ -2621,6 +2674,12 @@ class UnifiedWindow:
                 # 実行中の処理を停止
                 self.pdf_combiner = None
 
+            # ページ編集のワーカーとセッションを停止（fitzのdocを確実に閉じる）
+            if hasattr(self, 'page_editor_worker'):
+                self.page_editor_worker.shutdown()
+            if hasattr(self, 'page_editor_session'):
+                self.page_editor_session.close()
+
             # 一時ファイルの削除
             try:
                 import tempfile
@@ -2639,6 +2698,466 @@ class UnifiedWindow:
             self.root.destroy()
             logger.info("PDF変換・結合ツール 正常終了")
     
+    # ════════════════════════════════════════════════════════════
+    # ページ編集タブ
+    # ════════════════════════════════════════════════════════════
+
+    def _create_page_editor_ui(self) -> None:
+        """ページ編集タブUI（1ファイル専用・サムネイルグリッド）"""
+        ctk.CTkLabel(
+            self.page_editor_tab,
+            text="PDFのページを削除・移動・抽出・挿入します（元ファイルは変更しません）",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14)
+        ).pack(pady=(10, 5))
+
+        self.page_editor_banner = CompletionBanner(
+            self.page_editor_tab, CLR_PE_PRIMARY, CLR_PE_HOVER)
+        self.page_editor_banner.pack(fill="x", padx=15, pady=(0, 4))
+
+        # ── ツールバー1段目: ファイル操作 ──
+        pe_file_bar = ctk.CTkFrame(self.page_editor_tab, fg_color=CLR_TOOLBAR_BG,
+                                   border_width=1, border_color=CLR_BORDER,
+                                   corner_radius=6)
+        pe_file_bar.pack(fill="x", padx=15, pady=(0, 4))
+
+        self.pe_select_btn = ctk.CTkButton(
+            pe_file_bar, text="PDF選択", command=self._select_page_editor_file,
+            height=32, width=90,
+            fg_color=CLR_PE_PRIMARY, hover_color=CLR_PE_HOVER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold")
+        )
+        self.pe_select_btn.pack(side="left", padx=(8, 4), pady=6)
+
+        self.pe_clear_btn = ctk.CTkButton(
+            pe_file_bar, text="クリア", command=self._clear_page_editor,
+            height=32, width=70,
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_GRAY_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13), state="disabled"
+        )
+        self.pe_clear_btn.pack(side="left", padx=(0, 4), pady=6)
+
+        self.pe_file_label = ctk.CTkLabel(
+            pe_file_bar, text="PDFファイルを選択してください",
+            text_color=CLR_GRAY_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        self.pe_file_label.pack(side="left", padx=8)
+        self._attach_tooltip(
+            self.pe_file_label,
+            lambda: self.page_editor_session.main_path or ""
+        )
+
+        self.pe_cancel_btn = ctk.CTkButton(
+            pe_file_bar, text="中止", command=self._cancel_page_editor_render,
+            height=32, width=60,
+            fg_color=CLR_RED_LIGHT, text_color=CLR_RED_TEXT,
+            hover_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13)
+        )
+        # 読み込み中のみ表示する（初期は非表示）
+
+        # ── ツールバー2段目: ページ操作 ──
+        pe_edit_bar = ctk.CTkFrame(self.page_editor_tab, fg_color=CLR_TOOLBAR_BG,
+                                   border_width=1, border_color=CLR_BORDER,
+                                   corner_radius=6)
+        pe_edit_bar.pack(fill="x", padx=15, pady=(0, 4))
+
+        def _tool_btn(text: str, command, width: int = 78):
+            btn = ctk.CTkButton(
+                pe_edit_bar, text=text, command=command, height=30, width=width,
+                fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+                hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=12), state="disabled"
+            )
+            btn.pack(side="left", padx=(4, 0), pady=6)
+            return btn
+
+        self.pe_delete_btn = _tool_btn("🗑 削除", self._page_editor_delete)
+        self.pe_extract_btn = _tool_btn("📤 抽出...", self._page_editor_extract)
+        self.pe_insert_btn = _tool_btn("➕ 挿入...", self._page_editor_insert, 84)
+        self.pe_back_btn = _tool_btn("◀ 前へ", self._page_editor_move_backward, 66)
+        self.pe_forward_btn = _tool_btn("次へ ▶", self._page_editor_move_forward, 66)
+        self.pe_undo_btn = _tool_btn("↩ 取り消し", self._page_editor_undo, 88)
+        self.pe_reset_btn = _tool_btn("↺ 最初に戻す", self._page_editor_reset, 100)
+
+        # ── サムネイルグリッド ──
+        self.pe_grid = PageThumbnailGrid(
+            self.page_editor_tab, self._on_page_editor_selection_change)
+        self.pe_grid.pack(fill="both", expand=True, padx=15, pady=(0, 4))
+
+        # ── 保存先サマリー ──
+        (pe_output_frame, self.page_editor_output_name_label,
+         self.page_editor_output_desc_label) = self._create_output_summary_row(
+            self.page_editor_tab, CLR_PE_PRIMARY, CLR_PE_HOVER,
+            self._change_page_editor_output_dir)
+        pe_output_frame.pack(fill="x", padx=15, pady=(0, 4))
+        _pe_output_tip = lambda: OutputManager.resolve_output_dir(
+            self.page_editor_output_dir, self._page_editor_files(),
+            PAGE_EDITOR_OUTPUT_FOLDER_NAME)
+        self._attach_tooltip(self.page_editor_output_name_label, _pe_output_tip)
+        self._attach_tooltip(self.page_editor_output_desc_label, _pe_output_tip)
+
+        # ── 保存ボタン ──
+        pe_btn_frame = ctk.CTkFrame(self.page_editor_tab, fg_color="transparent")
+        pe_btn_frame.pack(pady=(4, 4))
+
+        self.pe_save_btn = ctk.CTkButton(
+            pe_btn_frame, text="💾 保存", command=self._page_editor_save,
+            height=40, width=180, state="disabled",
+            fg_color=CLR_DISABLED_BG, hover_color=CLR_DISABLED_BG,
+            text_color="white", text_color_disabled=CLR_DISABLED_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+        )
+        self.pe_save_btn.pack()
+
+        self.pe_progress = ctk.CTkProgressBar(self.page_editor_tab)
+        self.pe_progress.pack(fill="x", padx=15, pady=(0, 4))
+        self.pe_progress.set(0)
+
+        self.pe_status = ctk.CTkLabel(
+            self.page_editor_tab, text="PDFファイルを選択してください",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        self.pe_status.pack(pady=(0, 10))
+
+        # Ctrl+Z で1手戻す
+        self.root.bind_all("<Control-z>", self._on_page_editor_ctrl_z)
+
+    # ── ページ編集: ファイル操作 ────────────────────────────────
+
+    def _page_editor_files(self) -> List[str]:
+        """保存先解決用に、メインPDFのパスをリストで返す"""
+        path = self.page_editor_session.main_path
+        return [path] if path else []
+
+    def _select_page_editor_file(self) -> None:
+        file = fd.askopenfilename(
+            title="ページ編集するPDFを選択",
+            filetypes=[("PDFファイル", "*.pdf"), ("すべてのファイル", "*.*")]
+        )
+        if file:
+            self._load_page_editor_file(file)
+
+    def _add_page_editor_files(self, paths: List[str]) -> None:
+        """ドラッグ&ドロップ用（先頭のPDFだけを受け付ける）"""
+        pdfs = [p for p in paths if Path(p).suffix.lower() == ".pdf"]
+        if pdfs:
+            self._load_page_editor_file(pdfs[0])
+
+    def _load_page_editor_file(self, path: str) -> None:
+        """メインPDFを読み込み、サムネイルを順次描画する"""
+        self.page_editor_banner.hide()
+        self._pe_images = {}
+        generation = self.page_editor_worker.bump_generation()
+        self._set_page_editor_busy(True)
+        self.pe_status.configure(text="PDFを読み込んでいます...")
+        self.pe_progress.set(0)
+        self.pe_cancel_btn.pack(side="right", padx=8, pady=6)
+
+        def job(gen: int):
+            self.page_editor_session.load(path)
+            pages = self.page_editor_session.pages
+            total = len(pages)
+            for i, ref in enumerate(pages):
+                if self.page_editor_worker.is_stale(gen):
+                    return None
+                image = render_thumbnail(self.page_editor_session.get_page(ref))
+                self.root.after(
+                    0, lambda r=ref, im=image, n=i + 1, t=total:
+                    self._on_thumbnail_ready(gen, r, im, n, t)
+                )
+            return total
+
+        self.page_editor_worker.submit(
+            job,
+            on_done=lambda total: self._on_page_editor_loaded(generation, total),
+            on_error=self._on_page_editor_load_error,
+        )
+
+    def _on_thumbnail_ready(self, generation: int, ref, image, done: int,
+                            total: int) -> None:
+        """1ページぶんの描画完了（UIスレッド）。ImageTk化はここで行う"""
+        if self.page_editor_worker.is_stale(generation):
+            return
+        self._pe_images[ref] = ImageTk.PhotoImage(image)
+        self.pe_progress.set(done / total)
+        self.pe_status.configure(text=f"サムネイル読み込み中... ({done}/{total})")
+
+    def _on_page_editor_loaded(self, generation: int, total) -> None:
+        self.pe_cancel_btn.pack_forget()
+        self._set_page_editor_busy(False)
+        if total is None:
+            # 中止された
+            self.pe_status.configure(text="読み込みを中止しました")
+            self.pe_progress.set(0)
+            return
+        self.pe_file_label.configure(
+            text=Path(self.page_editor_session.main_path).name,
+            text_color=CLR_DARK_TEXT
+        )
+        self._refresh_page_editor_grid()
+        self.pe_progress.set(1.0)
+        self.pe_status.configure(text=f"{total}ページを読み込みました")
+        self._update_page_editor_output_dir_label()
+
+    def _on_page_editor_load_error(self, error: Exception) -> None:
+        self.pe_cancel_btn.pack_forget()
+        self._set_page_editor_busy(False)
+        self.pe_progress.set(0)
+        self.pe_status.configure(text="読み込みに失敗しました")
+        error_handler.handle_error(error, ErrorSeverity.WARNING, "ページ編集の読み込み")
+
+    def _cancel_page_editor_render(self) -> None:
+        """サムネイル読み込みを打ち切る"""
+        self.page_editor_worker.bump_generation()
+
+    def _clear_page_editor(self) -> None:
+        """タブを初期状態に戻す（セッションを閉じる数少ないタイミングの1つ）"""
+        self.page_editor_worker.bump_generation()
+        self.page_editor_worker.submit(
+            lambda gen: self.page_editor_session.close(),
+            on_done=lambda _r: self._after_page_editor_cleared(),
+        )
+
+    def _after_page_editor_cleared(self) -> None:
+        self._pe_images = {}
+        self._pe_selected = set()
+        self.pe_grid.set_pages([], {})
+        self.pe_file_label.configure(text="PDFファイルを選択してください",
+                                     text_color=CLR_GRAY_TEXT)
+        self.pe_status.configure(text="PDFファイルを選択してください")
+        self.pe_progress.set(0)
+        self.page_editor_banner.hide()
+        self._update_page_editor_buttons()
+        self._update_page_editor_output_dir_label()
+
+    # ── ページ編集: 編集操作 ────────────────────────────────────
+
+    def _refresh_page_editor_grid(self) -> None:
+        self.pe_grid.set_pages(self.page_editor_session.pages, self._pe_images)
+        self._update_page_editor_buttons()
+
+    def _on_page_editor_selection_change(self, selected: set) -> None:
+        self._pe_selected = selected
+        self._update_page_editor_buttons()
+
+    def _set_page_editor_busy(self, busy: bool) -> None:
+        """ワーカー実行中はページ操作を全面的に止める（fitzの同時アクセス防止）"""
+        self._pe_busy = busy
+        self._update_page_editor_buttons()
+
+    def _update_page_editor_buttons(self) -> None:
+        session = self.page_editor_session
+        has_pages = bool(session.pages)
+        sel = len(self._pe_selected)
+        busy = self._pe_busy
+
+        def state(enabled: bool) -> str:
+            return "normal" if (enabled and not busy) else "disabled"
+
+        self.pe_select_btn.configure(state=state(True))
+        self.pe_clear_btn.configure(state=state(has_pages))
+        self.pe_delete_btn.configure(state=state(sel >= 1))
+        self.pe_extract_btn.configure(state=state(sel >= 1))
+        self.pe_insert_btn.configure(state=state(sel == 1))
+        self.pe_back_btn.configure(state=state(sel >= 1))
+        self.pe_forward_btn.configure(state=state(sel >= 1))
+        self.pe_undo_btn.configure(state=state(session.can_undo))
+        self.pe_reset_btn.configure(state=state(has_pages))
+        self._set_exec_btn_enabled(
+            self.pe_save_btn, has_pages and not busy, CLR_PE_PRIMARY, CLR_PE_HOVER)
+
+    def _page_editor_delete(self) -> None:
+        if self._pe_busy or not self._pe_selected:
+            return
+        session = self.page_editor_session
+        session.apply(delete_pages(session.pages, self._pe_selected))
+        self._refresh_page_editor_grid()
+        self.pe_status.configure(text=f"{len(session.pages)}ページ")
+
+    def _page_editor_move_backward(self) -> None:
+        if self._pe_busy or not self._pe_selected:
+            return
+        session = self.page_editor_session
+        session.apply(move_pages_backward(session.pages, self._pe_selected))
+        self._refresh_page_editor_grid()
+
+    def _page_editor_move_forward(self) -> None:
+        if self._pe_busy or not self._pe_selected:
+            return
+        session = self.page_editor_session
+        session.apply(move_pages_forward(session.pages, self._pe_selected))
+        self._refresh_page_editor_grid()
+
+    def _page_editor_undo(self) -> None:
+        if self._pe_busy:
+            return
+        if self.page_editor_session.undo():
+            self._refresh_page_editor_grid()
+            self.pe_status.configure(
+                text=f"1つ前に戻しました（{len(self.page_editor_session.pages)}ページ）")
+
+    def _on_page_editor_ctrl_z(self, event=None) -> None:
+        if self._current_tab == "ページ編集":
+            self._page_editor_undo()
+
+    def _page_editor_reset(self) -> None:
+        if self._pe_busy:
+            return
+        self.page_editor_session.reset()
+        self._refresh_page_editor_grid()
+        self.pe_status.configure(
+            text=f"読み込み直後に戻しました（{len(self.page_editor_session.pages)}ページ）")
+
+    def _page_editor_insert(self) -> None:
+        """選択ページの前／後に別PDFの全ページを挿入する"""
+        if self._pe_busy or len(self._pe_selected) != 1:
+            return
+        index = next(iter(self._pe_selected))
+
+        # 「はい」＝後ろ、「いいえ」＝前
+        after = messagebox.askyesno(
+            "挿入位置",
+            f"{index + 1}ページ目の【後ろ】に挿入しますか？\n\n"
+            f"「いいえ」を選ぶと【前】に挿入します。"
+        )
+        after_index = index if after else index - 1
+
+        path = fd.askopenfilename(
+            title="挿入するPDFを選択",
+            filetypes=[("PDFファイル", "*.pdf"), ("すべてのファイル", "*.*")]
+        )
+        if not path:
+            return
+
+        self._set_page_editor_busy(True)
+        self.pe_status.configure(text="挿入中...")
+        generation = self.page_editor_worker.current_generation
+
+        def job(gen: int):
+            self.page_editor_session.insert_from_file(after_index, path)
+            # 挿入されたページのサムネイルだけを追加で描画する
+            images = {}
+            for ref in self.page_editor_session.pages:
+                if ref not in self._pe_images and ref not in images:
+                    images[ref] = render_thumbnail(
+                        self.page_editor_session.get_page(ref))
+            return images
+
+        self.page_editor_worker.submit(
+            job,
+            on_done=lambda images: self._on_page_editor_inserted(images),
+            on_error=self._on_page_editor_insert_error,
+        )
+
+    def _on_page_editor_inserted(self, images: dict) -> None:
+        for ref, image in images.items():
+            self._pe_images[ref] = ImageTk.PhotoImage(image)
+        self._set_page_editor_busy(False)
+        self._refresh_page_editor_grid()
+        self.pe_status.configure(
+            text=f"{len(self.page_editor_session.pages)}ページ")
+
+    def _on_page_editor_insert_error(self, error: Exception) -> None:
+        self._set_page_editor_busy(False)
+        self.pe_status.configure(text="挿入に失敗しました")
+        error_handler.handle_error(error, ErrorSeverity.WARNING, "ページ挿入")
+
+    # ── ページ編集: 保存先 ──────────────────────────────────────
+
+    def _change_page_editor_output_dir(self) -> None:
+        d = fd.askdirectory(title="保存先フォルダを選択")
+        if d:
+            self.page_editor_output_dir = d
+            self._update_page_editor_output_dir_label()
+
+    def _update_page_editor_output_dir_label(self) -> None:
+        resolved = OutputManager.resolve_output_dir(
+            self.page_editor_output_dir, self._page_editor_files(),
+            PAGE_EDITOR_OUTPUT_FOLDER_NAME)
+        self._apply_output_summary(
+            self.page_editor_output_name_label,
+            self.page_editor_output_desc_label,
+            self.page_editor_output_dir, resolved,
+            PAGE_EDITOR_OUTPUT_FOLDER_NAME)
+
+    # ── ページ編集: 書き出し ────────────────────────────────────
+
+    def _page_editor_resolve_output(self, suffix: str) -> Optional[str]:
+        """出力パスを決める。上書き確認でキャンセルされたら None を返す"""
+        out_dir = OutputManager.resolve_output_dir(
+            self.page_editor_output_dir, self._page_editor_files(),
+            PAGE_EDITOR_OUTPUT_FOLDER_NAME)
+        if not out_dir:
+            return None
+        stem = Path(self.page_editor_session.main_path).stem
+        filename = f"{stem}{suffix}.pdf"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        overwrite = self._resolve_overwrite([Path(out_dir) / filename])
+        if overwrite is None:
+            return None
+        return OutputManager.get_unique_output_path(
+            out_dir, filename, overwrite=overwrite)
+
+    def _page_editor_save(self) -> None:
+        if self._pe_busy or not self.page_editor_session.pages:
+            return
+        output_path = self._page_editor_resolve_output("_編集")
+        if not output_path:
+            return
+
+        self._set_page_editor_busy(True)
+        self.pe_status.configure(text="保存中...")
+        self.page_editor_worker.submit(
+            lambda gen: self.page_editor_session.save(output_path),
+            on_done=lambda result: self._on_page_editor_written(result, "保存"),
+            on_error=lambda e: self._on_page_editor_write_error(e, "ページ編集の保存"),
+        )
+
+    def _page_editor_extract(self) -> None:
+        if self._pe_busy or not self._pe_selected:
+            return
+        output_path = self._page_editor_resolve_output("_抽出")
+        if not output_path:
+            return
+
+        indices = set(self._pe_selected)
+        self._set_page_editor_busy(True)
+        self.pe_status.configure(text="抽出中...")
+        self.page_editor_worker.submit(
+            lambda gen: self.page_editor_session.extract(indices, output_path),
+            on_done=lambda result: self._on_page_editor_written(result, "抽出"),
+            on_error=lambda e: self._on_page_editor_write_error(e, "ページ抽出"),
+        )
+
+    def _on_page_editor_written(self, result, label: str) -> None:
+        """保存・抽出の完了（セッションは維持したまま編集を続けられる）"""
+        self._set_page_editor_busy(False)
+        if not result.success:
+            messagebox.showerror("エラー", f"{label}に失敗しました。\n\n{result.error_message}")
+            self.pe_status.configure(text=f"{label}に失敗しました")
+            return
+
+        folder = str(Path(result.output_path).parent)
+        if self.auto_open_output_folder_var.get():
+            self._open_folder(folder)
+
+        self.page_editor_banner.show(
+            f"{label}が完了しました（{Path(result.output_path).name} / "
+            f"{result.total_pages}ページ）",
+            success=True,
+            buttons=[("📂 フォルダを開く", lambda f=folder: self._open_folder(f))],
+            output_dir=folder
+        )
+        self.pe_status.configure(
+            text=f"{label}完了（編集中: {len(self.page_editor_session.pages)}ページ）")
+
+    def _on_page_editor_write_error(self, error: Exception, context: str) -> None:
+        self._set_page_editor_busy(False)
+        self.pe_status.configure(text=f"{context}に失敗しました")
+        error_handler.handle_error(error, ErrorSeverity.WARNING, context)
+
     # ════════════════════════════════════════════════════════════
     # ページ番号挿入タブ
     # ════════════════════════════════════════════════════════════
