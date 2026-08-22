@@ -263,6 +263,79 @@ class PageEditSession:
             f"ページ編集: {Path(insert_path).name} から{len(new_refs)}ページ挿入"
         )
 
+    # ── 書き出し ──
+
+    @staticmethod
+    def _group_runs(pages: List[PageRef]) -> List[tuple]:
+        """連続する同一doc・連番ページを (doc_id, from_page, to_page) にまとめる。
+
+        1ページずつ insert_pdf すると遅いため、まとめて範囲指定で挿入する。
+        """
+        runs: List[tuple] = []
+        for ref in pages:
+            if runs and runs[-1][0] == ref.doc_id and runs[-1][2] + 1 == ref.page_index:
+                doc_id, start, _ = runs[-1]
+                runs[-1] = (doc_id, start, ref.page_index)
+            else:
+                runs.append((ref.doc_id, ref.page_index, ref.page_index))
+        return runs
+
+    def _write(self, pages: List[PageRef], output_path: str, label: str) -> PageEditResult:
+        """指定した並びを新規PDFとして書き出す共通処理"""
+        if not pages:
+            return PageEditResult(
+                success=False,
+                error_message="出力するページがありません。",
+            )
+
+        writer: Optional[fitz.Document] = None
+        try:
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            writer = fitz.open()
+            for doc_id, from_page, to_page in self._group_runs(pages):
+                src = self._docs.get(doc_id)
+                if src is None:
+                    raise PageEditError("編集セッションが閉じられています")
+                writer.insert_pdf(src, from_page=from_page, to_page=to_page)
+            writer.save(output_path)
+            logger.info(f"ページ編集: {label}完了 {output_path} ({len(pages)}ページ)")
+            return PageEditResult(
+                output_path=output_path,
+                success=True,
+                total_pages=len(pages),
+            )
+        except Exception as e:
+            logger.error(f"ページ編集: {label}に失敗: {e}", exc_info=True)
+            return PageEditResult(
+                success=False,
+                error_message=f"{label}に失敗しました: {e}",
+            )
+        finally:
+            if writer is not None:
+                try:
+                    writer.close()
+                except Exception:
+                    pass
+
+    def save(self, output_path: str) -> PageEditResult:
+        """現在の並びを1つの新規PDFとして書き出す。セッションは維持する"""
+        return self._write(self._pages, output_path, "保存")
+
+    def extract(self, indices: Set[int], output_path: str) -> PageEditResult:
+        """選択ページのみを新規PDFとして書き出す。現在の並びは変更しない"""
+        if not indices:
+            return PageEditResult(
+                success=False,
+                error_message="抽出するページが選択されていません。",
+            )
+        if any(not 0 <= i < len(self._pages) for i in indices):
+            return PageEditResult(
+                success=False,
+                error_message="選択されたページが範囲外です。",
+            )
+        selected = [self._pages[i] for i in sorted(indices)]
+        return self._write(selected, output_path, "抽出")
+
     # ── 終了処理 ──
 
     def close(self) -> None:

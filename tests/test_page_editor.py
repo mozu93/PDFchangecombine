@@ -415,3 +415,106 @@ class TestSessionInsertFromFile:
         doc.close()
         with pytest.raises(PageEditError):
             session.insert_from_file(0, str(protected))
+
+
+class TestSessionSave:
+    def test_現在の並びで書き出される(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 4))
+        session.apply(delete_pages(session.pages, {1}))
+        out = str(tmp_path / "saved.pdf")
+
+        result = session.save(out)
+
+        assert result.success is True
+        assert result.output_path == out
+        assert result.total_pages == 3
+        assert page_texts(out) == ["main Page 1", "main Page 3", "main Page 4"]
+
+    def test_並べ替えた順序どおりに書き出される(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 3))
+        session.apply(reorder_pages(session.pages, [2, 0, 1]))
+        out = str(tmp_path / "saved.pdf")
+
+        assert session.save(out).success is True
+        assert page_texts(out) == ["main Page 3", "main Page 1", "main Page 2"]
+
+    def test_複数ドキュメントが混在していても正しく書き出される(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 2))
+        session.insert_from_file(0, make_pdf("sub", 2))
+        out = str(tmp_path / "saved.pdf")
+
+        assert session.save(out).success is True
+        assert page_texts(out) == [
+            "main Page 1", "sub Page 1", "sub Page 2", "main Page 2"
+        ]
+
+    def test_保存しても元ファイルは変わらない(self, session, make_pdf, tmp_path):
+        src = make_pdf("main", 3)
+        session.load(src)
+        session.apply(delete_pages(session.pages, {0, 1}))
+        session.save(str(tmp_path / "saved.pdf"))
+        assert page_texts(src) == ["main Page 1", "main Page 2", "main Page 3"]
+
+    def test_保存後もセッションは維持され続けて編集できる(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 3))
+        session.save(str(tmp_path / "saved1.pdf"))
+        # 保存後にさらに編集して再保存できること
+        session.apply(delete_pages(session.pages, {0}))
+        out2 = str(tmp_path / "saved2.pdf")
+        assert session.save(out2).success is True
+        assert page_texts(out2) == ["main Page 2", "main Page 3"]
+
+    def test_0ページ状態の保存は失敗を返す(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 2))
+        session.apply(delete_pages(session.pages, {0, 1}))
+        result = session.save(str(tmp_path / "empty.pdf"))
+        assert result.success is False
+        assert result.error_message
+        assert not Path(tmp_path / "empty.pdf").exists()
+
+    def test_書き込めないパスは失敗を返す(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 2))
+        # 存在しないドライブ配下（Windows）を狙う
+        result = session.save(str(tmp_path / "no_such_dir" / "x" / "saved.pdf"))
+        assert result.success is False
+        assert result.error_message
+
+
+class TestSessionExtract:
+    def test_選択ページだけが書き出される(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 5))
+        out = str(tmp_path / "extracted.pdf")
+
+        result = session.extract({0, 2, 4}, out)
+
+        assert result.success is True
+        assert result.total_pages == 3
+        assert page_texts(out) == ["main Page 1", "main Page 3", "main Page 5"]
+
+    def test_抽出しても現在の並びは変わらない(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 4))
+        before = session.pages
+        session.extract({1}, str(tmp_path / "extracted.pdf"))
+        assert session.pages == before
+
+    def test_抽出は履歴を積まない(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 4))
+        session.extract({1}, str(tmp_path / "extracted.pdf"))
+        assert session.can_undo is False
+
+    def test_抽出は現在の並び順で出力される(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 3))
+        session.apply(reorder_pages(session.pages, [2, 1, 0]))
+        out = str(tmp_path / "extracted.pdf")
+        session.extract({0, 1}, out)
+        assert page_texts(out) == ["main Page 3", "main Page 2"]
+
+    def test_選択なしの抽出は失敗を返す(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 3))
+        result = session.extract(set(), str(tmp_path / "extracted.pdf"))
+        assert result.success is False
+
+    def test_範囲外インデックスの抽出は失敗を返す(self, session, make_pdf, tmp_path):
+        session.load(make_pdf("main", 3))
+        result = session.extract({5}, str(tmp_path / "extracted.pdf"))
+        assert result.success is False
