@@ -12,11 +12,13 @@ APP_VERSION = "1.21.8"
 WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
 # ウィンドウ設定（縦長レイアウト）
-# WINDOW_WIDTH: 結合タブのツールバー（PDF選択・選択削除・クリア・↑・↓・Ａ↓・
-# 資料を差し替え...・ファイル数）が1行に収まる最小幅を確保している
-WINDOW_WIDTH = 700
+# WINDOW_WIDTH: 左サイドバー（タブメニュー、幅130px）分の余白を確保しつつ、
+# 画面占有を抑えるためユーザー指定で850pxから15%削減した値。
+# 結合タブのツールバー（PDF選択・選択削除・クリア・↑・↓・Ａ↓・
+# 資料を差し替え...）は1行に収まることを実機確認済み
+WINDOW_WIDTH = 720
 WINDOW_HEIGHT = 700
-WINDOW_MIN_WIDTH = 350
+WINDOW_MIN_WIDTH = 500
 WINDOW_MIN_HEIGHT = 630
 
 # 対応ファイル形式 (要件定義書 F-102)

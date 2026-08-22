@@ -259,43 +259,48 @@ class UnifiedWindow:
         auto_open_switch.pack(side="right", padx=(0, 12), pady=10)
         self._attach_tooltip(auto_open_switch, "処理完了後に出力フォルダを自動的に開く")
 
-        # ── カスタムタブバー ──
+        # ── 本体（左サイドバー + コンテンツエリア） ──
         # name: 内部キー（既存の状態管理・_switch_tab等で参照される正式名称、変更不可）
-        # icon/label: 幅570pxの狭いウィンドウ向けにボタン表示は短縮し、正式名称はツールチップで補う
+        # ボタン表示は「アイコン＋正式名称（2行）」でひと目で機能がわかるようにする
         _TAB_DEFS = [
-            ("PDF変換",       "🔄", "変換",     TAB_CONVERSION),
-            ("資料NO挿入",     "📄", "資料NO",   TAB_DOCUMENT),
-            ("PDF結合",       "📋", "結合",     TAB_COMBINATION),
-            ("ページ番号挿入", "🔢", "ページ番号", TAB_PAGENUMBER),
+            ("PDF変換",       "🔄", TAB_CONVERSION),
+            ("資料NO挿入",     "📄", TAB_DOCUMENT),
+            ("PDF結合",       "📋", TAB_COMBINATION),
+            ("ページ番号挿入", "🔢", TAB_PAGENUMBER),
         ]
-        self._tab_active_colors = {name: colors for name, icon, label, colors in _TAB_DEFS}
+        self._tab_active_colors = {name: colors for name, icon, colors in _TAB_DEFS}
         self._tab_buttons: dict = {}
         self._tab_frames: dict = {}
 
-        tab_bar = ctk.CTkFrame(self.main_frame, fg_color="transparent", corner_radius=0)
-        tab_bar.pack(fill="x", padx=8, pady=(0, 0))
+        body = ctk.CTkFrame(self.main_frame, fg_color="transparent", corner_radius=0)
+        body.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        for name, icon, label, (active, hover) in _TAB_DEFS:
+        # ── 左サイドバー（縦タブメニュー） ──
+        sidebar = ctk.CTkFrame(body, fg_color="transparent", corner_radius=0, width=130)
+        sidebar.pack(side="left", fill="y", padx=(0, 8))
+        sidebar.pack_propagate(False)
+
+        for name, icon, (active, hover) in _TAB_DEFS:
             btn = ctk.CTkButton(
-                tab_bar, text=f"{icon} {label}",
-                font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
-                height=46, corner_radius=0,
+                sidebar, text=f"{icon}\n{name}",
+                font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold"),
+                height=56, corner_radius=0,
                 fg_color=TAB_INACTIVE[0], hover_color=TAB_INACTIVE[1],
                 border_spacing=0,
                 command=lambda n=name: self._switch_tab(n)
             )
-            btn.pack(side="left", fill="x", expand=True, padx=1, pady=0)
+            btn.pack(side="top", fill="x", padx=0, pady=(0, 1))
             self._tab_buttons[name] = btn
             self._attach_tooltip(btn, name)
 
         # ── コンテンツエリア ──
         content_outer = ctk.CTkFrame(
-            self.main_frame, fg_color=CLR_BORDER, corner_radius=0,
+            body, fg_color=CLR_BORDER, corner_radius=0,
             border_width=0
         )
-        content_outer.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        content_outer.pack(side="left", fill="both", expand=True)
 
-        for name, _, _, _ in _TAB_DEFS:
+        for name, _, _ in _TAB_DEFS:
             frame = ctk.CTkFrame(
                 content_outer, fg_color=("gray97", "gray15"),
                 corner_radius=0
