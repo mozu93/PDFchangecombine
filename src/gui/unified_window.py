@@ -338,7 +338,43 @@ class UnifiedWindow:
             else:
                 frame.pack_forget()
         self._current_tab = name
-    
+
+    def _create_output_summary_row(self, parent, primary_color, hover_color,
+                                    change_command) -> tuple:
+        """保存先を「フォルダ名＋場所」の2行で示す行を作る（実行ボタンの真上に配置）。
+
+        戻り値: (frame, name_label, desc_label)
+        """
+        frame = ctk.CTkFrame(parent, fg_color=CLR_TOOLBAR_BG,
+                              border_width=1, border_color=CLR_BORDER, corner_radius=6)
+
+        change_btn = ctk.CTkButton(
+            frame, text="変更", command=change_command,
+            height=26, width=60, fg_color="transparent", text_color=primary_color,
+            border_width=1, border_color=primary_color, hover_color=CLR_LIGHT_BG,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        change_btn.pack(side="right", padx=(4, 8), pady=6)
+
+        text_col = ctk.CTkFrame(frame, fg_color="transparent")
+        text_col.pack(side="left", fill="x", expand=True, padx=(10, 4), pady=5)
+
+        name_label = ctk.CTkLabel(
+            text_col, text="保存先", anchor="w",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold"),
+            text_color=CLR_DARK_TEXT
+        )
+        name_label.pack(anchor="w")
+
+        desc_label = ctk.CTkLabel(
+            text_col, text="", anchor="w",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=CLR_GRAY_TEXT
+        )
+        desc_label.pack(anchor="w")
+
+        return frame, name_label, desc_label
+
     def _create_conversion_ui(self) -> None:
         """PDF変換タブUI"""
         # 説明ラベル
@@ -404,30 +440,6 @@ class UnifiedWindow:
         )
         self.conversion_count_label.pack(side="right", padx=10, pady=6)
 
-        # ── 出力先フォルダ行 ──
-        conv_out_frame = ctk.CTkFrame(self.conversion_tab, fg_color=CLR_TOOLBAR_BG,
-                                      border_width=1, border_color=CLR_BORDER, corner_radius=6)
-        conv_out_frame.pack(fill="x", padx=15, pady=(0, 4))
-        ctk.CTkLabel(conv_out_frame, text="出力先:",
-                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
-        self.conversion_change_output_btn = ctk.CTkButton(
-            conv_out_frame, text="📂 変更", command=self._change_conversion_output_dir,
-            height=26, width=80, fg_color=CLR_CONV_PRIMARY, hover_color=CLR_CONV_HOVER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
-        )
-        # 右側のボタンを先にpackして幅を確保してから、残り幅を出力先ラベルに埋めさせる
-        # （先にfill=x,expand=Trueのラベルをpackすると、後からpackする側のウィジェットが
-        # 　幅0に押し潰されることがあるため）
-        self.conversion_change_output_btn.pack(side="right", padx=(4, 8), pady=5)
-        self.conversion_output_dir_label = ctk.CTkLabel(
-            conv_out_frame, text="（最初のファイルと同じフォルダ）",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
-        )
-        self.conversion_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.conversion_output_dir_label,
-            lambda: OutputManager.resolve_output_dir(
-                self.conversion_output_dir, self.conversion_files, CONVERSION_OUTPUT_FOLDER_NAME))
-
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
         # ステータスラベル（一番下）
@@ -454,6 +466,16 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.conversion_convert_btn.pack(side="bottom", pady=(6, 6))
+
+        # ── 保存先サマリー（実行ボタンの真上） ──
+        (conv_output_frame, self.conversion_output_name_label,
+         self.conversion_output_desc_label) = self._create_output_summary_row(
+            self.conversion_tab, CLR_CONV_PRIMARY, CLR_CONV_HOVER,
+            self._change_conversion_output_dir)
+        conv_output_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+        self._attach_tooltip(conv_output_frame,
+            lambda: OutputManager.resolve_output_dir(
+                self.conversion_output_dir, self.conversion_files, CONVERSION_OUTPUT_FOLDER_NAME))
 
         # Excelシート分割オプション
         self.excel_options_frame = ctk.CTkFrame(
@@ -597,26 +619,6 @@ class UnifiedWindow:
         )
         self.combination_count_label.pack(side="right", padx=10, pady=6)
 
-        # ── 出力先フォルダ行 ──
-        comb_out_frame = ctk.CTkFrame(self.combination_tab, fg_color=CLR_TOOLBAR_BG,
-                                      border_width=1, border_color=CLR_BORDER, corner_radius=6)
-        comb_out_frame.pack(fill="x", padx=15, pady=(0, 4))
-        ctk.CTkLabel(comb_out_frame, text="出力先:",
-                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
-        ctk.CTkButton(
-            comb_out_frame, text="📂 変更", command=self._change_combination_output_dir,
-            height=26, width=80, fg_color=CLR_COMB_PRIMARY, hover_color=CLR_COMB_HOVER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
-        ).pack(side="right", padx=(4, 8), pady=5)
-        self.combination_output_dir_label = ctk.CTkLabel(
-            comb_out_frame, text="（最初のファイルと同じフォルダ）",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
-        )
-        self.combination_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.combination_output_dir_label,
-            lambda: OutputManager.resolve_output_dir(
-                self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME))
-
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
         # ステータスラベル（一番下に固定）
@@ -643,6 +645,16 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.combination_combine_btn.pack(side="bottom", pady=(6, 6))
+
+        # ── 保存先サマリー（実行ボタンの真上） ──
+        (comb_output_frame, self.combination_output_name_label,
+         self.combination_output_desc_label) = self._create_output_summary_row(
+            self.combination_tab, CLR_COMB_PRIMARY, CLR_COMB_HOVER,
+            self._change_combination_output_dir)
+        comb_output_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+        self._attach_tooltip(comb_output_frame,
+            lambda: OutputManager.resolve_output_dir(
+                self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME))
 
         # オプションフレーム（白紙挿入 + ページ番号）— 詳細設定として折りたたみ
         self.add_blank_page_var = ctk.BooleanVar()
@@ -853,26 +865,6 @@ class UnifiedWindow:
         )
         self.document_count_label.pack(side="right", padx=10, pady=6)
 
-        # ── 出力先フォルダ行 ──
-        doc_out_frame = ctk.CTkFrame(self.document_number_tab, fg_color=CLR_TOOLBAR_BG,
-                                     border_width=1, border_color=CLR_BORDER, corner_radius=6)
-        doc_out_frame.pack(fill="x", padx=15, pady=(0, 4))
-        ctk.CTkLabel(doc_out_frame, text="出力先:",
-                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
-        ctk.CTkButton(
-            doc_out_frame, text="📂 変更", command=self._change_document_output_dir,
-            height=26, width=80, fg_color=CLR_DOC_PRIMARY, hover_color=CLR_DOC_HOVER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
-        ).pack(side="right", padx=(4, 8), pady=5)
-        self.document_output_dir_label = ctk.CTkLabel(
-            doc_out_frame, text="（最初のファイルと同じフォルダ）",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
-        )
-        self.document_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.document_output_dir_label,
-            lambda: OutputManager.resolve_output_dir(
-                self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME))
-
         # ── 下部固定エリア（draggable_listより先にpackして画面下部に固定） ──
 
         # ステータスラベル（一番下に固定）
@@ -914,6 +906,16 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
         )
         self.document_execute_btn.pack(side="left")
+
+        # ── 保存先サマリー（実行ボタンの真上） ──
+        (doc_output_frame, self.document_output_name_label,
+         self.document_output_desc_label) = self._create_output_summary_row(
+            self.document_number_tab, CLR_DOC_PRIMARY, CLR_DOC_HOVER,
+            self._change_document_output_dir)
+        doc_output_frame.pack(side="bottom", fill="x", padx=15, pady=(0, 4))
+        self._attach_tooltip(doc_output_frame,
+            lambda: OutputManager.resolve_output_dir(
+                self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME))
 
         # ── 設定フレーム（ボタンの上に固定） ──
         settings_frame = ctk.CTkFrame(
@@ -1985,7 +1987,8 @@ class UnifiedWindow:
 
             self.document_banner.show(
                 f"資料NO挿入が完了しました（{len(result.processed_files)}個 / {result.total_pages}ページ）",
-                success=(len(result.failed_files) == 0), buttons=buttons
+                success=(len(result.failed_files) == 0), buttons=buttons,
+                output_dir=folder
             )
         else:
             message = f"資料NO挿入に失敗しました。\n\nエラー: {result.error_message}"
@@ -2183,6 +2186,22 @@ class UnifiedWindow:
         )
         return True if confirmed else None
 
+    def _apply_output_summary(self, name_label, desc_label, override: str,
+                               resolved: str, default_folder_name: str) -> None:
+        """保存先サマリー（フォルダ名＋場所の2行）を更新する共通処理。
+
+        override が設定されている場合は選択フォルダ名とその場所を、
+        未設定の場合は既定フォルダ名と「元のファイルと同じ場所」を表示する。
+        """
+        if override and resolved:
+            folder_name = Path(resolved).name
+            desc = self._shorten_path(resolved, max_len=44)
+        else:
+            folder_name = default_folder_name
+            desc = "元のファイルと同じ場所" if resolved else "ファイルを選択すると決まります"
+        name_label.configure(text=f"保存先  「{folder_name}」フォルダ")
+        desc_label.configure(text=desc)
+
     # ── 変換タブ ─────────────────────────────────────────────────
     def _change_conversion_output_dir(self) -> None:
         d = fd.askdirectory(title="変換ファイルの出力先フォルダを選択")
@@ -2193,12 +2212,9 @@ class UnifiedWindow:
     def _update_conversion_output_dir_label(self) -> None:
         resolved = OutputManager.resolve_output_dir(
             self.conversion_output_dir, self.conversion_files, CONVERSION_OUTPUT_FOLDER_NAME)
-        if resolved:
-            self.conversion_output_dir_label.configure(
-                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
-        else:
-            self.conversion_output_dir_label.configure(
-                text="変換元フォルダ内に「PDF変換済」を作成（既定）", text_color=CLR_GRAY_TEXT)
+        self._apply_output_summary(
+            self.conversion_output_name_label, self.conversion_output_desc_label,
+            self.conversion_output_dir, resolved, CONVERSION_OUTPUT_FOLDER_NAME)
 
     # ── 結合タブ ─────────────────────────────────────────────────
     def _change_combination_output_dir(self) -> None:
@@ -2210,12 +2226,9 @@ class UnifiedWindow:
     def _update_combination_output_dir_label(self) -> None:
         resolved = OutputManager.resolve_output_dir(
             self.combination_output_dir, self.combination_files, COMBINATION_OUTPUT_FOLDER_NAME)
-        if resolved:
-            self.combination_output_dir_label.configure(
-                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
-        else:
-            self.combination_output_dir_label.configure(
-                text="変換元フォルダ内に「PDF結合済」を作成（既定）", text_color=CLR_GRAY_TEXT)
+        self._apply_output_summary(
+            self.combination_output_name_label, self.combination_output_desc_label,
+            self.combination_output_dir, resolved, COMBINATION_OUTPUT_FOLDER_NAME)
 
     # ── 資料NO挿入タブ ────────────────────────────────────────────
     def _change_document_output_dir(self) -> None:
@@ -2227,12 +2240,9 @@ class UnifiedWindow:
     def _update_document_output_dir_label(self) -> None:
         resolved = OutputManager.resolve_output_dir(
             self.document_output_dir, self.document_number_files, DOCUMENT_OUTPUT_FOLDER_NAME)
-        if resolved:
-            self.document_output_dir_label.configure(
-                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
-        else:
-            self.document_output_dir_label.configure(
-                text="変換元フォルダ内に「資料NO挿入済」を作成（既定）", text_color=CLR_GRAY_TEXT)
+        self._apply_output_summary(
+            self.document_output_name_label, self.document_output_desc_label,
+            self.document_output_dir, resolved, DOCUMENT_OUTPUT_FOLDER_NAME)
 
     # ── ページ番号挿入タブ ─────────────────────────────────────────
     def _change_pagenumber_output_dir(self) -> None:
@@ -2244,12 +2254,9 @@ class UnifiedWindow:
     def _update_pagenumber_output_dir_label(self) -> None:
         resolved = OutputManager.resolve_output_dir(
             self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME)
-        if resolved:
-            self.pagenumber_output_dir_label.configure(
-                text=self._shorten_path(resolved), text_color=CLR_DARK_TEXT)
-        else:
-            self.pagenumber_output_dir_label.configure(
-                text="元ファイルのフォルダ内に「ページ番号挿入済」を作成（既定）", text_color=CLR_GRAY_TEXT)
+        self._apply_output_summary(
+            self.pagenumber_output_name_label, self.pagenumber_output_desc_label,
+            self.pagenumber_output_dir, resolved, PAGENUMBER_OUTPUT_FOLDER_NAME)
 
     def _delete_selected_conversion(self) -> None:
         """選択中の変換ファイルを削除"""
@@ -2428,7 +2435,8 @@ class UnifiedWindow:
 
             self.conversion_banner.show(
                 f"変換が完了しました（成功 {len(successful)}件 / 失敗 {len(failed)}件）",
-                success=(len(failed) == 0), buttons=buttons
+                success=(len(failed) == 0), buttons=buttons,
+                output_dir=folder
             )
 
         else:
@@ -2549,7 +2557,8 @@ class UnifiedWindow:
             self.combination_banner.show(
                 f"PDF結合が完了しました（{Path(result.output_path).name} / {result.total_pages}ページ）",
                 success=(len(result.failed_files) == 0),
-                buttons=[("📂 フォルダを開く", lambda f=folder: self._open_folder(f))]
+                buttons=[("📂 フォルダを開く", lambda f=folder: self._open_folder(f))],
+                output_dir=folder
             )
         else:
             message = f"結合に失敗しました。\n\nエラー: {result.error_message}"
@@ -2671,26 +2680,6 @@ class UnifiedWindow:
         )
         self.pn_clear_btn.pack(side="left", padx=(0, 4), pady=6)
 
-        # ── 出力先フォルダ行 ──
-        pn_out_frame = ctk.CTkFrame(self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
-                                    border_width=1, border_color=CLR_BORDER, corner_radius=6)
-        pn_out_frame.pack(fill="x", padx=15, pady=(0, 4))
-        ctk.CTkLabel(pn_out_frame, text="出力先:",
-                     font=ctk.CTkFont(family=FONT_FAMILY, size=13)).pack(side="left", padx=(8, 4), pady=5)
-        ctk.CTkButton(
-            pn_out_frame, text="📂 変更", command=self._change_pagenumber_output_dir,
-            height=26, width=80, fg_color=CLR_PN_PRIMARY, hover_color=CLR_PN_HOVER,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
-        ).pack(side="right", padx=(4, 8), pady=5)
-        self.pagenumber_output_dir_label = ctk.CTkLabel(
-            pn_out_frame, text="（元ファイルと同じフォルダ）",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=CLR_GRAY_TEXT, anchor="w"
-        )
-        self.pagenumber_output_dir_label.pack(side="left", fill="x", expand=True, padx=4, pady=5)
-        self._attach_tooltip(self.pagenumber_output_dir_label,
-            lambda: OutputManager.resolve_output_dir(
-                self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME))
-
         # ── ファイル選択エリア ──
         self.pn_drop_frame = ctk.CTkFrame(
             self.pagenumber_tab, fg_color=CLR_TOOLBAR_BG,
@@ -2796,6 +2785,16 @@ class UnifiedWindow:
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
             progress_color="#553C9A"
         ).pack(side="left")
+
+        # ── 保存先サマリー（実行ボタンの真上） ──
+        (pn_output_frame, self.pagenumber_output_name_label,
+         self.pagenumber_output_desc_label) = self._create_output_summary_row(
+            self.pagenumber_tab, CLR_PN_PRIMARY, CLR_PN_HOVER,
+            self._change_pagenumber_output_dir)
+        pn_output_frame.pack(fill="x", padx=15, pady=(0, 4))
+        self._attach_tooltip(pn_output_frame,
+            lambda: OutputManager.resolve_output_dir(
+                self.pagenumber_output_dir, self.pagenumber_files, PAGENUMBER_OUTPUT_FOLDER_NAME))
 
         # ── 実行ボタン + プレビューボタン ──
         pn_btn_frame = ctk.CTkFrame(self.pagenumber_tab, fg_color="transparent")
@@ -2999,7 +2998,8 @@ class UnifiedWindow:
             self.pagenumber_banner.show(
                 f"ページ番号挿入が完了しました（{Path(result.output_path).name} / {result.total_pages}ページ）",
                 success=True,
-                buttons=[("📂 フォルダを開く", lambda f=folder: self._open_folder(f))]
+                buttons=[("📂 フォルダを開く", lambda f=folder: self._open_folder(f))],
+                output_dir=folder
             )
             self._clear_pagenumber_file()
         else:

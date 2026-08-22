@@ -4,11 +4,12 @@
 フォルダを開く・次工程タブへ送るなどのアクションボタンを提供する。
 """
 
+from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 import customtkinter as ctk
 
-from .theme import FONT_FAMILY, CLR_DARK_TEXT
+from .theme import FONT_FAMILY, CLR_DARK_TEXT, CLR_GRAY_TEXT
 
 
 class CompletionBanner(ctk.CTkFrame):
@@ -19,6 +20,9 @@ class CompletionBanner(ctk.CTkFrame):
     _BG_WARN = "#FFFAF0"
     _BORDER_WARN = "#DD6B20"
 
+    _HEIGHT_PLAIN = 44
+    _HEIGHT_WITH_DEST = 64
+
     def __init__(self, parent, accent_color: str, accent_hover: str, **kwargs):
         super().__init__(
             parent, fg_color=self._BG_SUCCESS, border_color=self._BORDER_SUCCESS,
@@ -28,11 +32,19 @@ class CompletionBanner(ctk.CTkFrame):
         self._accent = accent_color
         self._accent_hover = accent_hover
 
+        text_col = ctk.CTkFrame(self, fg_color="transparent")
+        text_col.pack(side="left", fill="x", expand=True, padx=(12, 8), pady=6)
+
         self._msg = ctk.CTkLabel(
-            self, text="", text_color=CLR_DARK_TEXT, anchor="w", justify="left",
+            text_col, text="", text_color=CLR_DARK_TEXT, anchor="w", justify="left",
             font=ctk.CTkFont(family=FONT_FAMILY, size=13)
         )
-        self._msg.pack(side="left", fill="x", expand=True, padx=(12, 8), pady=6)
+        self._msg.pack(anchor="w")
+
+        self._dest_label = ctk.CTkLabel(
+            text_col, text="", text_color=CLR_GRAY_TEXT, anchor="w", justify="left",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
 
         self._btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._btn_frame.pack(side="right", padx=(0, 4), pady=4)
@@ -46,8 +58,14 @@ class CompletionBanner(ctk.CTkFrame):
         self._close_btn.pack(side="right", padx=(0, 8), pady=6)
 
     def show(self, message: str, success: bool = True,
-              buttons: Optional[List[Tuple[str, Callable]]] = None) -> None:
-        """バナーを表示する。buttons: [(ラベル, コールバック), ...]"""
+              buttons: Optional[List[Tuple[str, Callable]]] = None,
+              output_dir: Optional[str] = None) -> None:
+        """バナーを表示する。
+
+        buttons: [(ラベル, コールバック), ...]
+        output_dir: 保存先フォルダの絶対パス。指定するとフォルダ名を
+            太字強調した「保存先」行をメッセージの下に表示する。
+        """
         for w in self._btn_frame.winfo_children():
             w.destroy()
 
@@ -56,6 +74,15 @@ class CompletionBanner(ctk.CTkFrame):
             border_color=self._BORDER_SUCCESS if success else self._BORDER_WARN,
         )
         self._msg.configure(text=message)
+
+        if output_dir:
+            folder_name = Path(output_dir).name
+            self._dest_label.configure(text=f"保存先：「{folder_name}」フォルダ（{output_dir}）")
+            self._dest_label.pack(anchor="w")
+            self.configure(height=self._HEIGHT_WITH_DEST)
+        else:
+            self._dest_label.pack_forget()
+            self.configure(height=self._HEIGHT_PLAIN)
 
         for label, cmd in (buttons or []):
             ctk.CTkButton(
@@ -66,9 +93,8 @@ class CompletionBanner(ctk.CTkFrame):
                 command=cmd,
             ).pack(side="left", padx=3)
 
-        self.configure(height=44)
-
     def hide(self) -> None:
         self.configure(height=0)
+        self._dest_label.pack_forget()
         for w in self._btn_frame.winfo_children():
             w.destroy()
