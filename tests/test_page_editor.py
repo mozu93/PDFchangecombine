@@ -474,8 +474,10 @@ class TestSessionSave:
 
     def test_書き込めないパスは失敗を返す(self, session, make_pdf, tmp_path):
         session.load(make_pdf("main", 2))
-        # 存在しないドライブ配下（Windows）を狙う
-        result = session.save(str(tmp_path / "no_such_dir" / "x" / "saved.pdf"))
+        # 既存ファイルが親ディレクトリ作成をブロックするケース
+        blocker = tmp_path / "blocker"
+        blocker.write_text("blocking file")
+        result = session.save(str(blocker / "x" / "saved.pdf"))
         assert result.success is False
         assert result.error_message
 
