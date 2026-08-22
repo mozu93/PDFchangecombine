@@ -2675,10 +2675,24 @@ class UnifiedWindow:
                 self.pdf_combiner = None
 
             # ページ編集のワーカーとセッションを停止（fitzのdocを確実に閉じる）
+            # shutdown() の join にはタイムアウトがあり、保存・抽出・挿入は
+            # サムネイル描画と違って途中で中断できない。join が時間切れした場合、
+            # ワーカーはまだ fitz を触っている可能性があるため、ここで close すると
+            # 使用中の Document を壊してしまう。その場合はクローズを見送り、
+            # ハンドルの解放はプロセス終了に任せる（出力先は常に新規ファイルなので
+            # 元PDFが壊れることはない）
+            worker_still_busy = False
             if hasattr(self, 'page_editor_worker'):
                 self.page_editor_worker.shutdown()
+                worker_still_busy = self.page_editor_worker.is_busy
             if hasattr(self, 'page_editor_session'):
-                self.page_editor_session.close()
+                if worker_still_busy:
+                    logger.warning(
+                        "ページ編集ワーカーが時間内に停止しなかったため、"
+                        "セッションのクローズを見送ります"
+                    )
+                else:
+                    self.page_editor_session.close()
 
             # 一時ファイルの削除
             try:
@@ -2884,11 +2898,40 @@ class UnifiedWindow:
         self.pe_progress.set(done / total)
         self.pe_status.configure(text=f"サムネイル読み込み中... ({done}/{total})")
 
+    def _sync_page_editor_file_label(self) -> None:
+        """ファイル名ラベルをセッションの実状態に合わせる。
+
+        中止・失敗時はセッションの中身と画面表示がずれやすいので、
+        必ずセッションを唯一の真実として表示を作り直す。
+        """
+        path = self.page_editor_session.main_path
+        if path:
+            self.pe_file_label.configure(text=Path(path).name,
+                                         text_color=CLR_DARK_TEXT)
+        else:
+            self.pe_file_label.configure(text="PDFファイルを選択してください",
+                                         text_color=CLR_GRAY_TEXT)
+
+    def _resync_page_editor_view(self) -> None:
+        """グリッド・ファイル名・保存先表示をセッションの実状態へ同期する。
+
+        読み込みの中止・失敗ではセッションだけが先に書き換わる
+        （load() は close() 後に実行され、中止判定はその後の描画ループで起きる）。
+        同期しないと「画面は旧PDF・実体は新PDFまたは空」という状態になり、
+        そのまま保存すると見えているものと違う内容が書き出されてしまう。
+        """
+        self._pe_selected = set()
+        self._refresh_page_editor_grid()
+        self._sync_page_editor_file_label()
+        self._update_page_editor_output_dir_label()
+
     def _on_page_editor_loaded(self, generation: int, total) -> None:
         self.pe_cancel_btn.pack_forget()
         self._set_page_editor_busy(False)
         if total is None:
-            # 中止された
+            # 中止された。load() 自体は既に完了しているためセッションは
+            # 新しいPDFを保持している。表示をそれに合わせ直す
+            self._resync_page_editor_view()
             self.pe_status.configure(text="読み込みを中止しました")
             self.pe_progress.set(0)
             return
@@ -2904,6 +2947,9 @@ class UnifiedWindow:
     def _on_page_editor_load_error(self, error: Exception) -> None:
         self.pe_cancel_btn.pack_forget()
         self._set_page_editor_busy(False)
+        # load() は既存セッションを close() してから開くため、失敗時は空になる。
+        # 旧PDFのサムネイルを残すと、実体のないページを操作できてしまう
+        self._resync_page_editor_view()
         self.pe_progress.set(0)
         self.pe_status.configure(text="読み込みに失敗しました")
         error_handler.handle_error(error, ErrorSeverity.WARNING, "ページ編集の読み込み")
