@@ -4,9 +4,12 @@ import fitz
 import pytest
 
 from src.gui.page_thumbnail_grid import (
+    CELL_HEIGHT,
     CELL_WIDTH,
+    THUMBNAIL_SIZE_PRESETS,
     THUMBNAIL_WIDTH,
     calc_columns,
+    cell_dims_for,
     render_thumbnail,
 )
 
@@ -54,3 +57,20 @@ class TestRenderThumbnail:
         doc.close()
         assert img.width == 110
         assert img.height < img.width
+
+
+class TestCellDimsFor:
+    def test_既定サムネイル幅で既存のCELL定数と一致する(self):
+        assert cell_dims_for(THUMBNAIL_WIDTH) == (CELL_WIDTH, CELL_HEIGHT)
+
+    def test_サムネイル幅が大きいほどセルも大きくなる(self):
+        small_w, small_h = cell_dims_for(80)
+        large_w, large_h = cell_dims_for(150)
+        assert large_w > small_w
+        assert large_h > small_h
+
+    def test_プリセットのサムネイル幅すべてで妥当なセル寸法になる(self):
+        for width in THUMBNAIL_SIZE_PRESETS.values():
+            cell_width, cell_height = cell_dims_for(width)
+            assert cell_width > width
+            assert cell_height > cell_width

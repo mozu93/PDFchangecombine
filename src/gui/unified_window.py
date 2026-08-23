@@ -74,7 +74,14 @@ from ..core.page_editor import (
     move_pages_forward,
 )
 from .page_edit_worker import PageEditWorker
-from .page_thumbnail_grid import PageThumbnailGrid, render_thumbnail
+from .page_thumbnail_grid import (
+    DEFAULT_THUMBNAIL_SIZE,
+    THUMBNAIL_SIZE_PRESETS,
+    PageThumbnailGrid,
+    cell_dims_for,
+    render_thumbnail,
+)
+from .insert_position_dialog import ask_insert_position
 
 
 class DndCTk(ctk.CTk, TkinterDnD.DnDWrapper):
@@ -150,6 +157,9 @@ class UnifiedWindow:
         self._pe_images: dict = {}
         self._pe_selected: set = set()
         self._pe_busy: bool = False
+        self._pe_thumb_size: str = DEFAULT_THUMBNAIL_SIZE
+        self._pe_preview_pending: bool = False
+        self._pe_preview_dialog = None
 
         # UI作成
         self._create_main_ui()
@@ -409,18 +419,27 @@ class UnifiedWindow:
         text_col.pack(side="left", fill="x", expand=True, padx=(10, 4), pady=5)
 
         name_label = ctk.CTkLabel(
-            text_col, text="保存先", anchor="w",
+            text_col, text="保存先", anchor="w", justify="left",
             font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold"),
             text_color=CLR_DARK_TEXT
         )
-        name_label.pack(anchor="w")
+        name_label.pack(anchor="w", fill="x")
 
         desc_label = ctk.CTkLabel(
-            text_col, text="", anchor="w",
+            text_col, text="", anchor="w", justify="left",
             font=ctk.CTkFont(family=FONT_FAMILY, size=11),
             text_color=CLR_GRAY_TEXT
         )
-        desc_label.pack(anchor="w")
+        desc_label.pack(anchor="w", fill="x")
+
+        # フォルダ名・パスが長いと表示エリアからはみ出るため、実幅に合わせて
+        # 折り返す（固定文字数での省略だけでは長い日本語パスを吸収しきれない）
+        def _update_wrap(_event=None) -> None:
+            width = max(text_col.winfo_width() - 4, 80)
+            name_label.configure(wraplength=width)
+            desc_label.configure(wraplength=width)
+
+        text_col.bind("<Configure>", _update_wrap)
 
         return frame, name_label, desc_label
 
@@ -2795,10 +2814,48 @@ class UnifiedWindow:
         self.pe_undo_btn = _tool_btn("↩ 取り消し", self._page_editor_undo, 88)
         self.pe_reset_btn = _tool_btn("↺ 最初に戻す", self._page_editor_reset, 100)
 
+        # ── ツールバー3段目: 選択・表示補助（2段目が幅いっぱいのため独立させる） ──
+        pe_view_bar = ctk.CTkFrame(self.page_editor_tab, fg_color=CLR_TOOLBAR_BG,
+                                   border_width=1, border_color=CLR_BORDER,
+                                   corner_radius=6)
+        pe_view_bar.pack(fill="x", padx=15, pady=(0, 4))
+
+        self.pe_clear_selection_btn = ctk.CTkButton(
+            pe_view_bar, text="選択解除", command=self._page_editor_clear_selection,
+            height=28, width=76, state="disabled",
+            fg_color=CLR_TOOLBAR_BG, text_color=CLR_DARK_TEXT,
+            hover_color=CLR_BORDER, border_width=1, border_color=CLR_BORDER,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        self.pe_clear_selection_btn.pack(side="left", padx=(8, 4), pady=6)
+        self._attach_tooltip(
+            self.pe_clear_selection_btn,
+            "チェック中のページの選択だけを外します（読み込んだPDFはそのままです）"
+        )
+
+        pe_size_label = ctk.CTkLabel(
+            pe_view_bar, text="表示サイズ", text_color=CLR_GRAY_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12)
+        )
+        pe_size_label.pack(side="left", padx=(16, 4))
+        self.pe_size_var = ctk.StringVar(value=DEFAULT_THUMBNAIL_SIZE)
+        self.pe_size_btn = ctk.CTkSegmentedButton(
+            pe_view_bar, values=list(THUMBNAIL_SIZE_PRESETS.keys()),
+            variable=self.pe_size_var, command=self._on_page_editor_size_changed,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            height=26, width=180
+        )
+        self.pe_size_btn.pack(side="left", padx=(0, 4), pady=6)
+
         # ── サムネイルグリッド ──
         self.pe_grid = PageThumbnailGrid(
-            self.page_editor_tab, self._on_page_editor_selection_change)
+            self.page_editor_tab, self._on_page_editor_selection_change,
+            on_preview=self._page_editor_preview_page)
         self.pe_grid.pack(fill="both", expand=True, padx=15, pady=(0, 4))
+        self._attach_tooltip(
+            self.pe_grid,
+            "クリックで選択／Shift+クリックで範囲選択／右クリックで拡大表示"
+        )
 
         # ── 保存先サマリー ──
         (pe_output_frame, self.page_editor_output_name_label,
@@ -2876,6 +2933,8 @@ class UnifiedWindow:
         self.pe_progress.set(0)
         self.pe_cancel_btn.pack(side="right", padx=8, pady=6)
 
+        thumb_width = THUMBNAIL_SIZE_PRESETS[self._pe_thumb_size]
+
         def job(gen: int):
             self.page_editor_session.load(path)
             pages = self.page_editor_session.pages
@@ -2883,7 +2942,8 @@ class UnifiedWindow:
             for i, ref in enumerate(pages):
                 if self.page_editor_worker.is_stale(gen):
                     return None
-                image = render_thumbnail(self.page_editor_session.get_page(ref))
+                image = render_thumbnail(
+                    self.page_editor_session.get_page(ref), width=thumb_width)
                 self.root.after(
                     0, lambda r=ref, im=image, n=i + 1, t=total:
                     self._on_thumbnail_ready(gen, r, im, n, t)
@@ -2995,6 +3055,103 @@ class UnifiedWindow:
         self._pe_selected = selected
         self._update_page_editor_buttons()
 
+    def _page_editor_preview_page(self, index: int) -> None:
+        """🔍ボタン／右クリックされたページを拡大表示する（読み取り専用、fitzはワーカー経由）。
+
+        描画に一瞬かかるため、押してすぐ反応が見えないと連打されやすい。
+        連打で複数のジョブが積まれてプレビューが何個も開くのを防ぐため、
+        描画中は新しい要求を無視し、開くときは直前のプレビューを閉じてから開く。
+        """
+        if self._pe_busy or self._pe_preview_pending:
+            return
+        session = self.page_editor_session
+        if not 0 <= index < len(session.pages):
+            return
+        ref = session.pages[index]
+        self._pe_preview_pending = True
+
+        def job(gen: int):
+            return render_thumbnail(session.get_page(ref), width=900)
+
+        def on_done(image):
+            self._pe_preview_pending = False
+            self._show_page_editor_preview(index, image)
+
+        def on_error(error: Exception):
+            self._pe_preview_pending = False
+            error_handler.handle_error(error, ErrorSeverity.WARNING, "ページプレビュー")
+
+        self.page_editor_worker.submit(job, on_done=on_done, on_error=on_error)
+
+    def _show_page_editor_preview(self, index: int, image) -> None:
+        """既に開いているプレビューがあれば先に閉じてから開く（多重表示を防ぐ）"""
+        old = self._pe_preview_dialog
+        if old is not None:
+            try:
+                if old.winfo_exists():
+                    old.destroy()
+            except Exception:
+                pass
+        self._pe_preview_dialog = PDFPreviewDialog(
+            self.root, f"{index + 1}ページ目のプレビュー", lambda img=image: img)
+
+    def _on_page_editor_size_changed(self, value: str) -> None:
+        """サムネイル表示サイズ（小/中/大）を切り替え、現在のページを再描画する"""
+        if self._pe_busy:
+            self.pe_size_var.set(self._pe_thumb_size)
+            return
+        if value == self._pe_thumb_size:
+            return
+        self._pe_thumb_size = value
+        thumb_width = THUMBNAIL_SIZE_PRESETS[value]
+        self.pe_grid.set_cell_size(*cell_dims_for(thumb_width))
+
+        session = self.page_editor_session
+        pages = session.pages
+        if not pages:
+            return  # 未読み込みならセルサイズだけ反映して終わり（次回読み込み時から適用）
+
+        selected_before = set(self._pe_selected)
+        self._pe_images = {}
+        generation = self.page_editor_worker.bump_generation()
+        self._set_page_editor_busy(True)
+        self.pe_status.configure(text="サムネイルを再描画しています...")
+        self.pe_progress.set(0)
+        self.pe_cancel_btn.pack(side="right", padx=8, pady=6)
+
+        def job(gen: int):
+            total = len(pages)
+            for i, ref in enumerate(pages):
+                if self.page_editor_worker.is_stale(gen):
+                    return None
+                image = render_thumbnail(session.get_page(ref), width=thumb_width)
+                self.root.after(
+                    0, lambda r=ref, im=image, n=i + 1, t=total:
+                    self._on_thumbnail_ready(gen, r, im, n, t)
+                )
+            return total
+
+        self.page_editor_worker.submit(
+            job,
+            on_done=lambda total: self._on_page_editor_size_render_done(
+                total, selected_before),
+            on_error=self._on_page_editor_load_error,
+        )
+
+    def _on_page_editor_size_render_done(self, total, selected_before: set) -> None:
+        self.pe_cancel_btn.pack_forget()
+        self._set_page_editor_busy(False)
+        if total is None:
+            # 表示サイズ変更中に別の操作へ割り込まれた。表示をセッションに合わせ直す
+            self._resync_page_editor_view()
+            self.pe_status.configure(text="表示サイズの変更を中止しました")
+            self.pe_progress.set(0)
+            return
+        self._refresh_page_editor_grid()
+        self.pe_grid.select_indices(selected_before)
+        self.pe_progress.set(1.0)
+        self.pe_status.configure(text=f"{total}ページ（表示サイズを変更しました）")
+
     def _set_page_editor_busy(self, busy: bool) -> None:
         """ワーカー実行中はページ操作を全面的に止める（fitzの同時アクセス防止）"""
         self._pe_busy = busy
@@ -3016,8 +3173,10 @@ class UnifiedWindow:
         self.pe_insert_btn.configure(state=state(sel == 1))
         self.pe_back_btn.configure(state=state(sel >= 1))
         self.pe_forward_btn.configure(state=state(sel >= 1))
+        self.pe_clear_selection_btn.configure(state=state(sel >= 1))
         self.pe_undo_btn.configure(state=state(session.can_undo))
         self.pe_reset_btn.configure(state=state(has_pages))
+        self.pe_size_btn.configure(state=state(True))
         self._set_exec_btn_enabled(
             self.pe_save_btn, has_pages and not busy, CLR_PE_PRIMARY, CLR_PE_HOVER)
 
@@ -3029,19 +3188,44 @@ class UnifiedWindow:
         self._refresh_page_editor_grid()
         self.pe_status.configure(text=f"{len(session.pages)}ページ")
 
+    def _move_page_editor_selection(self, move_fn) -> None:
+        """◀前へ／次へ▶の共通処理。移動後も同じページの選択状態を維持する。
+
+        session.apply() は PageRef のリストを丸ごと差し替えるだけで、
+        「どのページを選んでいたか」という情報自体は PageRef の同一性
+        （doc_id + page_index）で追跡できるため、移動後の新しい位置を
+        逆引きして選択し直す。
+
+        並べ替えはページ枚数が変わらないため、全セルを作り直す
+        _refresh_page_editor_grid() ではなく軽量な pe_grid.reorder() を使う
+        （ページ数が多いと毎回のウィジェット再生成が体感できるほど遅くなるため）。
+        """
+        session = self.page_editor_session
+        moving_refs = {session.pages[i] for i in self._pe_selected}
+        session.apply(move_fn(session.pages, self._pe_selected))
+        self.pe_grid.reorder(session.pages)
+        new_indices = {i for i, ref in enumerate(session.pages) if ref in moving_refs}
+        self.pe_grid.select_indices(new_indices)
+        self._update_page_editor_buttons()
+
     def _page_editor_move_backward(self) -> None:
         if self._pe_busy or not self._pe_selected:
             return
-        session = self.page_editor_session
-        session.apply(move_pages_backward(session.pages, self._pe_selected))
-        self._refresh_page_editor_grid()
+        self._move_page_editor_selection(move_pages_backward)
 
     def _page_editor_move_forward(self) -> None:
         if self._pe_busy or not self._pe_selected:
             return
-        session = self.page_editor_session
-        session.apply(move_pages_forward(session.pages, self._pe_selected))
-        self._refresh_page_editor_grid()
+        self._move_page_editor_selection(move_pages_forward)
+
+    def _page_editor_clear_selection(self) -> None:
+        """チェック（選択）だけを外す。読み込んだPDF自体はそのまま残す。
+
+        上部の「クリア」ボタン（PDFファイルを外す）とは別物。
+        """
+        if self._pe_busy:
+            return
+        self.pe_grid.clear_selection()
 
     def _page_editor_undo(self) -> None:
         if self._pe_busy:
@@ -3069,13 +3253,10 @@ class UnifiedWindow:
             return
         index = next(iter(self._pe_selected))
 
-        # 「はい」＝後ろ、「いいえ」＝前
-        after = messagebox.askyesno(
-            "挿入位置",
-            f"{index + 1}ページ目の【後ろ】に挿入しますか？\n\n"
-            f"「いいえ」を選ぶと【前】に挿入します。"
-        )
-        after_index = index if after else index - 1
+        position = ask_insert_position(self.root, index + 1)
+        if position is None:
+            return
+        after_index = index if position == "後" else index - 1
 
         path = fd.askopenfilename(
             title="挿入するPDFを選択",
@@ -3088,14 +3269,16 @@ class UnifiedWindow:
         self.pe_status.configure(text="挿入中...")
         generation = self.page_editor_worker.current_generation
 
+        thumb_width = THUMBNAIL_SIZE_PRESETS[self._pe_thumb_size]
+
         def job(gen: int):
             self.page_editor_session.insert_from_file(after_index, path)
-            # 挿入されたページのサムネイルだけを追加で描画する
+            # 挿入されたページのサムネイルだけを追加で描画する（現在の表示サイズに合わせる）
             images = {}
             for ref in self.page_editor_session.pages:
                 if ref not in self._pe_images and ref not in images:
                     images[ref] = render_thumbnail(
-                        self.page_editor_session.get_page(ref))
+                        self.page_editor_session.get_page(ref), width=thumb_width)
             return images
 
         self.page_editor_worker.submit(
