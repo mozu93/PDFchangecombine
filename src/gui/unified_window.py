@@ -2854,7 +2854,14 @@ class UnifiedWindow:
             self._load_page_editor_file(file)
 
     def _add_page_editor_files(self, paths: List[str]) -> None:
-        """ドラッグ&ドロップ用（先頭のPDFだけを受け付ける）"""
+        """ドラッグ&ドロップ用（先頭のPDFだけを受け付ける）
+
+        他の入口（PDF選択・クリア）はボタンのdisabledで塞がれているが、
+        D&Dはそれを迂回できてしまう。読み込み中の多重投入は
+        _pe_busy が途中で解除される原因になるためここで弾く。
+        """
+        if self._pe_busy:
+            return
         pdfs = [p for p in paths if Path(p).suffix.lower() == ".pdf"]
         if pdfs:
             self._load_page_editor_file(pdfs[0])
@@ -3107,6 +3114,9 @@ class UnifiedWindow:
 
     def _on_page_editor_insert_error(self, error: Exception) -> None:
         self._set_page_editor_busy(False)
+        # insert_from_file() はサムネイル描画より先に完了するため、描画側で
+        # 失敗するとセッションだけが増えた状態になる。表示を実状態へ戻す
+        self._resync_page_editor_view()
         self.pe_status.configure(text="挿入に失敗しました")
         error_handler.handle_error(error, ErrorSeverity.WARNING, "ページ挿入")
 
@@ -3131,15 +3141,18 @@ class UnifiedWindow:
     # ── ページ編集: 書き出し ────────────────────────────────────
 
     def _page_editor_resolve_output(self, suffix: str) -> Optional[str]:
-        """出力パスを決める。上書き確認でキャンセルされたら None を返す"""
-        out_dir = OutputManager.resolve_output_dir(
+        """出力パスを決める。上書き確認でキャンセルされたら None を返す。
+
+        フォルダ作成は他タブと同じ _prepare_output_dir に任せる
+        （書き込み不可のパスでも黙って失敗しないよう、警告表示まで含める）。
+        """
+        out_dir = self._prepare_output_dir(
             self.page_editor_output_dir, self._page_editor_files(),
             PAGE_EDITOR_OUTPUT_FOLDER_NAME)
         if not out_dir:
             return None
         stem = Path(self.page_editor_session.main_path).stem
         filename = f"{stem}{suffix}.pdf"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
         overwrite = self._resolve_overwrite([Path(out_dir) / filename])
         if overwrite is None:
             return None

@@ -40,6 +40,9 @@ def render_thumbnail(page: "fitz.Page", width: int = THUMBNAIL_WIDTH) -> Image.I
 
     必ず PageEditWorker のスレッド上から呼ぶこと（fitz はスレッドセーフでない）。
     """
+    # 幅0のページ（壊れたPDFで稀にある）で ZeroDivisionError にしない
+    if page.rect.width <= 0:
+        raise ValueError("ページの幅が0のため、サムネイルを作成できません")
     scale = width / page.rect.width
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
