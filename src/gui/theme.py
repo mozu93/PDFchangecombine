@@ -13,6 +13,7 @@ TAB_CONVERSION  = ("#2B6CB0", "#1A4A7A")   # (active, hover)  PDF変換  青
 TAB_COMBINATION = ("#C05621", "#963D15")   # PDF結合  オレンジ
 TAB_DOCUMENT    = ("#276749", "#1C4D36")   # 資料NO   緑
 TAB_PAGENUMBER  = ("#553C9A", "#3D2B6E")   # ページ番号  紫
+TAB_PAGEEDIT    = ("#2C7A7B", "#22595A")   # ページ編集  ティール
 TAB_INACTIVE    = ("#718096", "#4A5568")   # 非選択タブ  グレー
 
 # ── タブ別アクセントカラー ─────────────────────────────────────
@@ -24,6 +25,8 @@ CLR_DOC_PRIMARY  = "#276749"   # 資料NOタブ: 緑
 CLR_DOC_HOVER    = "#1C4D36"
 CLR_PN_PRIMARY   = "#553C9A"   # ページ番号タブ: 紫
 CLR_PN_HOVER     = "#3D2B6E"
+CLR_PE_PRIMARY   = "#2C7A7B"   # ページ編集タブ: ティール
+CLR_PE_HOVER     = "#22595A"
 
 # ── カラー定数 ──────────────────────────────────────────────
 CLR_PRIMARY       = "#2B6CB0"   # ヘッダー背景・主要アクション（変換タブと同色）

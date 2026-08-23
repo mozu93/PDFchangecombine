@@ -8,7 +8,7 @@ from pathlib import Path
 
 # アプリケーション基本設定
 APP_NAME = "PDF変換・結合ツール"
-APP_VERSION = "1.21.9"
+APP_VERSION = "1.22.0"
 WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
 # ウィンドウ設定（縦長レイアウト）
@@ -20,6 +20,11 @@ WINDOW_WIDTH = 720
 WINDOW_HEIGHT = 700
 WINDOW_MIN_WIDTH = 500
 WINDOW_MIN_HEIGHT = 630
+
+# PAGE_EDITOR_MIN_WIDTH: ページ編集タブはサムネイルを横に並べるため、
+# 720pxでは4列しか入らない。タブ選択時にこの幅まで「広げる」（縮めることはしない）。
+# 1366x768のノートPCに収まる値にしてある。
+PAGE_EDITOR_MIN_WIDTH = 880
 
 # 対応ファイル形式 (要件定義書 F-102)
 SUPPORTED_OFFICE_EXTENSIONS = {
@@ -49,6 +54,7 @@ CONVERSION_OUTPUT_FOLDER_NAME = "PDF変換済"
 DOCUMENT_OUTPUT_FOLDER_NAME = "資料NO挿入済"
 COMBINATION_OUTPUT_FOLDER_NAME = "PDF結合済"
 PAGENUMBER_OUTPUT_FOLDER_NAME = "ページ番号挿入済"
+PAGE_EDITOR_OUTPUT_FOLDER_NAME = "ページ編集済"
 
 # ログ設定 (要件定義書 5.2)
 LOG_RETENTION_DAYS = 30
